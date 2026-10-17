@@ -4,7 +4,7 @@
 
 ## Context
 
-The brief puts balance validation in a LangGraph "guardrail node". If that were the *only* check, a buggy or prompt-injected agent could issue a bad refund, and the eval would have to infer that from the transcript.
+The obvious place for balance validation is a LangGraph "guardrail node". If that were the *only* check, a buggy or prompt-injected agent could issue a bad refund, and the eval would have to infer that from the transcript.
 
 ## Decision
 

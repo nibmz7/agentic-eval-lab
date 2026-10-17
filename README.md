@@ -23,10 +23,12 @@ The system under test is a customer-support agent that can check balances, issue
 | Sprint | Scope | State |
 |---|---|---|
 | 1 | MCP tool server + backend + tests | ✅ done |
+| 1.5 | Resources, prompts, HTTP transport, bearer-token auth | ⬜ |
 | 2 | LangGraph agent with retries, guardrail, escalation | ⬜ |
 | 3 | Eval suite: trajectory, tool-args, end-state, multi-turn | ⬜ |
 | 4 | Langfuse tracing + write-up | ⬜ |
-| 5 | Adversarial / red-team + evaluator-integrity tests | ⬜ |
+| 5 | Evaluator-integrity tests | ⬜ |
+| 6 | Adversarial, authorization, governance (stretch) | ⬜ |
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for each sprint's exercises, and [docs/decisions/](docs/decisions/) for design notes.
 

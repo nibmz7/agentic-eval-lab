@@ -66,7 +66,7 @@ def build_server(store: SupportStore) -> MCPServer:
         ),
     )
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True))
+    @server.tool(annotations=ToolAnnotations(read_only_hint=True))
     def check_balance(user_id: UserId) -> Balance:
         """Return the account status and current balance for a customer."""
         try:
@@ -75,7 +75,7 @@ def build_server(store: SupportStore) -> MCPServer:
             raise ToolError(f"unknown_user: {exc}") from None
         return Balance(user_id=acct.user_id, status=acct.status, balance=_fmt(acct.balance_cents))
 
-    @server.tool(annotations=ToolAnnotations(destructiveHint=True, idempotentHint=True))
+    @server.tool(annotations=ToolAnnotations(destructive_hint=True, idempotent_hint=True))
     def process_refund(
         user_id: UserId,
         amount: Annotated[float | str, Field(description="Refund amount in dollars, e.g. 25.50.")],
@@ -96,7 +96,9 @@ def build_server(store: SupportStore) -> MCPServer:
         except UnknownUser as exc:
             raise ToolError(f"unknown_user: {exc}") from None
         return RefundResult(
-            refund_id=r["refund_id"], new_balance=_fmt(r["new_balance_cents"]), replayed=r["replayed"]
+            refund_id=r["refund_id"],
+            new_balance=_fmt(r["new_balance_cents"]),
+            replayed=r["replayed"],
         )
 
     @server.tool()
@@ -104,7 +106,10 @@ def build_server(store: SupportStore) -> MCPServer:
         user_id: UserId,
         reason: Annotated[str, Field(description="Why a human needs to handle this.")],
     ) -> TicketResult:
-        """Open a ticket for a human agent. Use when policy blocks an action or the request is unclear."""
+        """Open a ticket for a human agent.
+
+        Use when policy blocks an action or the request is unclear.
+        """
         try:
             r = store.escalate_ticket(user_id, reason)
         except PolicyViolation as exc:

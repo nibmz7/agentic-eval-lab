@@ -34,7 +34,11 @@ async def test_lists_expected_tools_with_schemas(client):
 async def test_check_balance_returns_structured_content(client):
     result = await client.call_tool("check_balance", {"user_id": "u_alice"})
     assert not result.is_error
-    assert result.structured_content == {"user_id": "u_alice", "status": "active", "balance": "120.00"}
+    assert result.structured_content == {
+        "user_id": "u_alice",
+        "status": "active",
+        "balance": "120.00",
+    }
 
 
 async def test_refund_accepts_dollars_and_mutates_backend(client, store):
@@ -63,5 +67,7 @@ async def test_policy_failures_surface_as_tool_errors(client, store, args, code)
 
 
 async def test_escalate_ticket(client, store):
-    result = await client.call_tool("escalate_ticket", {"user_id": "u_bob", "reason": "refund of 900"})
+    result = await client.call_tool(
+        "escalate_ticket", {"user_id": "u_bob", "reason": "refund of 900"}
+    )
     assert result.structured_content == {"ticket_id": 1, "status": "open"}

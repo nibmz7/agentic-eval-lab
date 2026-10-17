@@ -96,9 +96,7 @@ class SupportStore:
     def seeded(cls, path: str | Path = ":memory:") -> SupportStore:
         store = cls(path)
         with store._conn:
-            store._conn.executemany(
-                "INSERT OR IGNORE INTO users VALUES (?, ?, ?, ?)", SEED_USERS
-            )
+            store._conn.executemany("INSERT OR IGNORE INTO users VALUES (?, ?, ?, ?)", SEED_USERS)
         return store
 
     def close(self) -> None:
@@ -107,9 +105,7 @@ class SupportStore:
     # -- reads -----------------------------------------------------------
 
     def get_account(self, user_id: str) -> Account:
-        row = self._conn.execute(
-            "SELECT * FROM users WHERE user_id = ?", (user_id,)
-        ).fetchone()
+        row = self._conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)).fetchone()
         if row is None:
             raise UnknownUser(user_id)
         return Account(**dict(row))
@@ -214,7 +210,9 @@ class SupportStore:
             if not reason.strip():
                 raise PolicyViolation("invalid_reason", "escalation reason must not be empty")
         except (PolicyViolation, UnknownUser) as exc:
-            self._audit("escalate_ticket", payload, f"rejected:{getattr(exc, 'code', 'unknown_user')}")
+            self._audit(
+                "escalate_ticket", payload, f"rejected:{getattr(exc, 'code', 'unknown_user')}"
+            )
             raise
         with self._conn:
             cur = self._conn.execute(

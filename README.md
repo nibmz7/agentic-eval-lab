@@ -35,6 +35,9 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) for each sprint's exercises, and [docs/de
 ```bash
 uv sync
 uv run pytest                 # backend + MCP contract tests
+uv run ruff format            # format (prettier)
+uv run ruff check --fix       # lint (eslint)
+uv run pyright                # type-check (tsc --noEmit)
 uv run support-mcp            # run the MCP server over stdio
 npx @modelcontextprotocol/inspector uv run support-mcp   # poke at it in a UI
 ```

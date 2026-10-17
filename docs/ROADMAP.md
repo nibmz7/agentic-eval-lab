@@ -5,7 +5,7 @@ Each sprint ends with something that runs and is tested. The "Why it matters" li
 ## Sprint 1: MCP tool server ✅
 
 - `SupportStore`: SQLite backend. Integer cents, policy checks, idempotency keys, audit log, `snapshot()` for state comparison.
-- `support-mcp`: `MCPServer` exposing the three tools with typed schemas, structured output, tool annotations (`readOnlyHint`, `destructiveHint`), and `isError` results carrying stable error codes.
+- `support-mcp`: `MCPServer` exposing the three tools with typed schemas, structured output, tool annotations (read-only, destructive, idempotent hints), and `isError` results carrying stable error codes.
 - Tests at two levels: the backend directly, and the tools through a real MCP `Client`.
 
 **Try next:** add an MCP *resource* (for example `policy://refunds`) and a *prompt*. Run the server over `streamable-http` and connect to it from Claude Desktop or the Inspector.

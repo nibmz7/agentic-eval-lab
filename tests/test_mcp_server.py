@@ -4,8 +4,12 @@ This tests the contract an agent actually sees: tool names, JSON schemas,
 structured output, and isError results.
 """
 
+import dataclasses
+import json
+
 import pytest
 from mcp import Client
+from mcp.shared.exceptions import MCPError
 
 from support_lab.mcp_server import build_server
 
@@ -71,3 +75,51 @@ async def test_escalate_ticket(client, store):
         "escalate_ticket", {"user_id": "u_bob", "reason": "refund of 900"}
     )
     assert result.structured_content == {"ticket_id": 1, "status": "open"}
+
+
+# -- resources --------------------------------------------------------------
+
+
+async def test_policy_resource_is_listed_and_matches_backend_limit(client):
+    resources = (await client.list_resources()).resources
+    assert [(r.uri, r.mime_type) for r in resources] == [("policy://refunds", "text/markdown")]
+    text = (await client.read_resource("policy://refunds")).contents[0].text
+    assert "500.00" in text
+
+
+async def test_account_template_returns_backend_record(client, store):
+    templates = (await client.list_resource_templates()).resource_templates
+    assert [t.uri_template for t in templates] == ["account://{user_id}"]
+    contents = (await client.read_resource("account://u_alice")).contents[0]
+    assert json.loads(contents.text) == dataclasses.asdict(store.get_account("u_alice"))
+
+
+async def test_account_template_unknown_user_is_a_protocol_error(client):
+    with pytest.raises(MCPError, match="unknown user_id"):
+        await client.read_resource("account://u_ghost")
+
+
+async def test_reading_resources_does_not_change_state(client, store):
+    before = store.snapshot()
+    await client.read_resource("policy://refunds")
+    await client.read_resource("account://u_bob")
+    assert store.snapshot() == before
+
+
+# -- prompts ----------------------------------------------------------------
+
+
+async def test_refund_prompt_declares_required_arguments(client):
+    (prompt,) = (await client.list_prompts()).prompts
+    assert prompt.name == "handle_refund_request"
+    assert {(a.name, a.required) for a in prompt.arguments or []} == {
+        ("user_id", True),
+        ("amount", True),
+    }
+
+
+async def test_refund_prompt_renders_a_user_message(client):
+    result = await client.get_prompt("handle_refund_request", {"user_id": "u_bob", "amount": "900"})
+    (message,) = result.messages
+    assert message.role == "user"
+    assert "u_bob" in message.content.text and "900" in message.content.text

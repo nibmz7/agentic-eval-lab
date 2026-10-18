@@ -8,7 +8,7 @@ Each sprint ends with something that runs and is tested.
 - `support-mcp`: `MCPServer` exposing the three tools with typed schemas, structured output, tool annotations (read-only, destructive, idempotent hints), and `isError` results carrying stable error codes.
 - Tests at two levels: the backend directly, and the tools through a real MCP `Client`.
 
-## Sprint 1.5: Round out the MCP server
+## Sprint 1.5: Round out the MCP server ✅
 
 **More primitives and transports**
 

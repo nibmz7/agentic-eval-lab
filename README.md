@@ -10,7 +10,9 @@ The system under test is a customer-support agent that can check balances, issue
             └──────────┬───────────┘
                        │ MCP (stdio / in-process)
             ┌──────────▼───────────┐
-            │  support-mcp server  │  check_balance · process_refund · escalate_ticket
+            │  support-mcp server  │  tools: check_balance · process_refund · escalate_ticket
+            │                      │  resources: policy://refunds · account://{user_id}
+            │                      │  prompts: handle_refund_request
             └──────────┬───────────┘
                        │
             ┌──────────▼───────────┐
@@ -23,7 +25,7 @@ The system under test is a customer-support agent that can check balances, issue
 | Sprint | Scope | State |
 |---|---|---|
 | 1 | MCP tool server + backend + tests | ✅ done |
-| 1.5 | Resources, prompts, HTTP transport, bearer-token auth | ⬜ |
+| 1.5 | Resources, prompts, HTTP transport, bearer-token auth | ✅ done |
 | 2 | LangGraph agent with retries, guardrail, escalation | ⬜ |
 | 3 | Eval suite: trajectory, tool-args, end-state, multi-turn | ⬜ |
 | 4 | Langfuse tracing + write-up | ⬜ |
@@ -43,6 +45,23 @@ uv run pyright                # type-check (tsc --noEmit)
 uv run support-mcp            # run the MCP server over stdio
 npx @modelcontextprotocol/inspector uv run support-mcp   # poke at it in a UI
 ```
+
+### Over HTTP, with auth
+
+```bash
+SUPPORT_TRANSPORT=http uv run support-mcp     # http://127.0.0.1:8000/mcp
+```
+
+HTTP requires a bearer token. Two dev tokens are built in:
+
+| token | scopes | can refund? |
+|---|---|---|
+| `dev-agent` | `accounts:read refunds:write` | yes |
+| `dev-readonly` | `accounts:read` | no |
+
+In the Inspector, pick the Streamable HTTP transport and set the token under Authentication. Over stdio there is no auth (see [ADR 0002](docs/decisions/0002-auth-at-transport-layer.md)). `SUPPORT_HOST` and `SUPPORT_PORT` override the bind address.
+
+### Data
 
 `SUPPORT_DB=./lab.db uv run support-mcp` persists state to a file. By default the DB is in memory and seeded with four users:
 

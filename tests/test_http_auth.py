@@ -87,3 +87,22 @@ async def test_agent_token_can_refund(http_server, store):
     )
     assert not refund.is_error
     assert store.get_account("u_alice").balance_cents == 110_00
+
+
+async def test_readonly_token_cannot_escalate(http_server, store):
+    result = await _call(
+        http_server, "dev-readonly", "escalate_ticket", {"user_id": "u_bob", "reason": "over limit"}
+    )
+    assert result.is_error
+    (content,) = result.content
+    assert isinstance(content, TextContent)
+    assert "tickets:write" in content.text
+    assert store.snapshot()["tickets"] == []
+
+
+async def test_agent_token_can_escalate(http_server, store):
+    result = await _call(
+        http_server, "dev-agent", "escalate_ticket", {"user_id": "u_bob", "reason": "over limit"}
+    )
+    assert not result.is_error
+    assert store.snapshot()["tickets"] == [{"user_id": "u_bob", "status": "open"}]

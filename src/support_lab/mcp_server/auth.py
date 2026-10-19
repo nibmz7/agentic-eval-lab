@@ -14,10 +14,14 @@ from pydantic import AnyHttpUrl
 
 SCOPE_ACCOUNTS_READ = "accounts:read"
 SCOPE_REFUNDS_WRITE = "refunds:write"
+SCOPE_TICKETS_WRITE = "tickets:write"
 
 DEV_TOKENS: dict[str, tuple[str, list[str]]] = {
     # token: (client_id, scopes)
-    "dev-agent": ("support-agent", [SCOPE_ACCOUNTS_READ, SCOPE_REFUNDS_WRITE]),
+    "dev-agent": (
+        "support-agent",
+        [SCOPE_ACCOUNTS_READ, SCOPE_REFUNDS_WRITE, SCOPE_TICKETS_WRITE],
+    ),
     "dev-readonly": ("dashboard", [SCOPE_ACCOUNTS_READ]),
 }
 

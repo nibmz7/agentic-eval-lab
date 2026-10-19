@@ -6,7 +6,7 @@ The system under test is a customer-support agent that can check balances, issue
 
 ```
             ┌──────────────────────┐
- user ────▶ │  LangGraph agent     │  planner → action → guardrail → (retry | escalate | respond)
+ user ────▶ │  LangGraph agent     │  planner → agent → guardrail → tools → (agent | escalate)
             └──────────┬───────────┘
                        │ MCP (stdio / in-process)
             ┌──────────▼───────────┐
@@ -26,7 +26,7 @@ The system under test is a customer-support agent that can check balances, issue
 |---|---|---|
 | 1 | MCP tool server + backend + tests | ✅ done |
 | 1.5 | Resources, prompts, HTTP transport, bearer-token auth | ✅ done |
-| 2 | LangGraph agent with retries, guardrail, escalation | ⬜ |
+| 2 | LangGraph agent with retries, guardrail, escalation | ✅ done |
 | 3 | Eval suite: trajectory, tool-args, end-state, multi-turn | ⬜ |
 | 4 | Langfuse tracing + write-up | ⬜ |
 | 5 | Evaluator-integrity tests | ⬜ |
@@ -71,6 +71,17 @@ In the Inspector, pick the Streamable HTTP transport and set the token under Aut
 | `u_bob` | active | 1500.00 | refunds over the 500.00 limit must escalate |
 | `u_carol` | suspended | 80.00 | refunds must be refused |
 | `u_dave` | active | 0.00 | nothing to refund |
+
+### Chat with the agent
+
+Needs Claude credentials: `export ANTHROPIC_API_KEY=...`, or `ant auth login`.
+
+```bash
+uv run support-agent --customer u_alice
+uv run support-agent --customer u_bob --model claude-sonnet-5-5   # cheaper model
+```
+
+Every tool call is printed under the reply, including which ones the guardrail blocked. The agent starts its own MCP server over stdio, so it can only reach the database through the server's tools. `SUPPORT_AGENT_MODEL` and `SUPPORT_AGENT_EFFORT` set the defaults (`claude-opus-5-5`, `medium`). How the agent is put together: [ADR 0003](docs/decisions/0003-agent-graph.md).
 
 ## Notes
 

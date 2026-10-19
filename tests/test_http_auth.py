@@ -21,11 +21,6 @@ from support_lab.mcp_server import build_server
 pytestmark = pytest.mark.anyio
 
 
-@pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
 def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))

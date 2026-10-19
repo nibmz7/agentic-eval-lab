@@ -27,17 +27,16 @@ Each sprint ends with something that runs and is tested.
 
 Not in scope: a real OAuth authorization server. The verifier stands in for JWT validation; that's enough for this lab.
 
-## Sprint 2: LangGraph agent
+## Sprint 2: LangGraph agent ✅
 
-Build `src/support_lab/agent/`:
+`src/support_lab/agent/`, design in [ADR 0003](decisions/0003-agent-graph.md):
 
-- State: messages, the tool-call log, retry count, and an `escalated` flag.
-- Nodes: **planner** (classify intent: balance / refund / complaint / out-of-scope), **action** (call MCP tools via `langchain-mcp-adapters` or your own thin wrapper), **guardrail** (check the balance before any `process_refund` and block anything over the limit), **respond**.
-- Conditional edges: retry on transient tool errors (inject them, see below) up to N times, then escalate. Policy errors go straight to escalation, never retry.
-- A checkpointer (`MemorySaver` or SQLite) so a conversation can span turns, and so you can rewind state.
-- Make the model injectable: a scripted fake model for deterministic tests, and a real one for evals.
-
-**Fault injection:** add a `FlakyStore` wrapper that fails the Nth call. Retry logic you haven't seen fire hasn't been tested.
+- State: messages (content blocks exactly as the API returned them), a per-turn tool-call log, intent, and an `escalated` flag. An in-memory checkpointer keeps each conversation thread across turns.
+- Nodes: **planner** (intent classification with structured output), **agent** (one Claude call through the Anthropic SDK), **guardrail** (blocks refunds policy would refuse before they run), **tools** (MCP calls with retries), **escalate** and **decline**.
+- Transient failures are retried, then escalated automatically. Policy errors go back to the model and are never retried. Refunds carry an idempotency key so a retry can't refund twice.
+- The model is injectable: `ScriptedModel` replays fixed turns for deterministic tests, and `AnthropicModel` calls Claude. Its request shape is tested against a mock HTTP transport.
+- Fault injection: `FlakyStore` fails a chosen call before or after it commits.
+- `uv run support-agent` for a terminal chat.
 
 ## Sprint 3: Evaluation suite
 

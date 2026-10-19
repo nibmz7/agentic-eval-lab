@@ -54,10 +54,10 @@ SUPPORT_TRANSPORT=http uv run support-mcp     # http://127.0.0.1:8000/mcp
 
 HTTP requires a bearer token. Two dev tokens are built in:
 
-| token | scopes | can refund? |
-|---|---|---|
-| `dev-agent` | `accounts:read refunds:write` | yes |
-| `dev-readonly` | `accounts:read` | no |
+| token | scopes | read | refund | escalate |
+|---|---|---|---|---|
+| `dev-agent` | `accounts:read refunds:write tickets:write` | ✅ | ✅ | ✅ |
+| `dev-readonly` | `accounts:read` | ✅ | ❌ | ❌ |
 
 In the Inspector, pick the Streamable HTTP transport and set the token under Authentication. Over stdio there is no auth (see [ADR 0002](docs/decisions/0002-auth-at-transport-layer.md)). `SUPPORT_HOST` and `SUPPORT_PORT` override the bind address.
 

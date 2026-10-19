@@ -10,7 +10,8 @@ Over streamable HTTP the MCP server acts as an OAuth resource server: requests c
 
 - `build_server(store, auth_resource_url=...)` turns on bearer auth. `main()` passes it only for `SUPPORT_TRANSPORT=http`.
 - Tokens come from `DevTokenVerifier`, a fixed table standing in for real JWT validation. No authorization server runs. The `issuer_url` is a placeholder.
-- Every HTTP request needs `accounts:read`. `process_refund` also needs `refunds:write`, checked inside the tool.
+- Scopes are named `<resource>:<action>`. Every HTTP request needs `accounts:read`. `process_refund` also needs `refunds:write`, and `escalate_ticket` needs `tickets:write`. Both are checked inside the tool.
+- Any client allowed to take a risky action must also be allowed to escalate, so it always has a safe way to hand off to a human.
 - Without `auth_resource_url`, scope checks are skipped.
 - The HTTP server binds to `127.0.0.1` by default.
 

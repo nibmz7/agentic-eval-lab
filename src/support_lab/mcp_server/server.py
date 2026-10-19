@@ -25,7 +25,12 @@ from pydantic import BaseModel, Field
 
 from support_lab.backend import PolicyViolation, SupportStore, UnknownUser
 from support_lab.backend.store import REFUND_AUTO_APPROVE_LIMIT_CENTS
-from support_lab.mcp_server.auth import SCOPE_REFUNDS_WRITE, DevTokenVerifier, dev_auth_settings
+from support_lab.mcp_server.auth import (
+    SCOPE_REFUNDS_WRITE,
+    SCOPE_TICKETS_WRITE,
+    DevTokenVerifier,
+    dev_auth_settings,
+)
 
 UserId = Annotated[str, Field(description="Customer id, e.g. 'u_alice'.")]
 
@@ -132,6 +137,8 @@ def build_server(store: SupportStore, *, auth_resource_url: str | None = None) -
 
         Use when policy blocks an action or the request is unclear.
         """
+        if require_auth:
+            _require_scope(SCOPE_TICKETS_WRITE)
         try:
             r = store.escalate_ticket(user_id, reason)
         except PolicyViolation as exc:

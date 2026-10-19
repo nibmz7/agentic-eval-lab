@@ -77,7 +77,10 @@ async def test_escalate_ticket(client, store):
 
 async def test_policy_resource_is_listed_and_matches_backend_limit(client):
     resources = (await client.list_resources()).resources
-    assert [(r.uri, r.mime_type) for r in resources] == [("policy://refunds", "text/markdown")]
+    assert [(r.uri, r.mime_type) for r in resources] == [
+        ("policy://refunds", "text/markdown"),
+        ("session://customer", "application/json"),
+    ]
     text = (await client.read_resource("policy://refunds")).contents[0].text
     assert "500.00" in text
 
@@ -118,3 +121,8 @@ async def test_refund_prompt_renders_a_user_message(client):
     (message,) = result.messages
     assert message.role == "user"
     assert "u_bob" in message.content.text and "900" in message.content.text
+
+
+async def test_nobody_is_signed_in_over_stdio(client):
+    contents = (await client.read_resource("session://customer")).contents[0]
+    assert json.loads(contents.text) == {"customer_id": None}

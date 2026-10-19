@@ -4,31 +4,34 @@
 
 ## The graph
 
-Generated from the compiled graph with `get_graph().draw_mermaid()`. Dotted edges are conditional.
+Matches the compiled graph (`get_graph().draw_mermaid()` prints the raw version).
 
 ```mermaid
-graph TD;
-	__start__([start]):::first
-	planner(planner)
-	decline(decline)
-	agent(agent)
-	guardrail(guardrail)
-	tools(tools)
-	escalate(escalate)
-	__end__([end]):::last
-	__start__ --> planner;
-	planner -.->|out_of_scope| decline;
-	planner -.-> agent;
-	agent -.->|tool calls| guardrail;
-	agent -.->|no tool calls| __end__;
-	guardrail --> tools;
-	tools -.-> agent;
-	tools -.->|failed after retries| escalate;
-	decline --> __end__;
-	escalate --> __end__;
-	classDef first fill-opacity:0
-	classDef last fill:#bfb6fc
+flowchart TD
+    start([START]) --> planner
+    planner["<b>planner</b><br/>classify intent"] -->|in scope| agent
+    planner -->|out_of_scope| decline["<b>decline</b><br/>fixed reply"]
+    agent["<b>agent</b><br/>Claude picks tools"] -->|no tool calls| done([END])
+    agent -->|tool calls| guardrail["<b>guardrail</b><br/>check refund policy"]
+    guardrail -->|approved + blocked calls| tools["<b>tools</b><br/>run via MCP, retry"]
+    tools -->|tool results| agent
+    tools -->|failed after retries| escalate["<b>escalate</b><br/>open ticket"]
+    decline --> done
+    escalate --> done
+    guardrail -.->|lookup| mcp[("MCP server<br/>+ SQLite store")]
+    tools -.->|tools/call| mcp
+
+    classDef llm fill:#d9eff2,stroke:#0f7c8c,stroke-width:2px,color:#0b4f59
+    classDef code fill:#f4f5f7,stroke:#8a93a3,color:#1b2230
+    classDef fail fill:#fbeadf,stroke:#b4561f,color:#7a3410
+    classDef infra fill:#eef0f4,stroke:#8a93a3,stroke-dasharray:4 3,color:#1b2230
+    class planner,agent llm
+    class decline,guardrail,tools code
+    class escalate fail
+    class mcp infra
 ```
+
+Teal steps call Claude; grey steps are plain code. Dashed lines are calls to the MCP server.
 
 | Node | Does | Calls the model? |
 |---|---|---|

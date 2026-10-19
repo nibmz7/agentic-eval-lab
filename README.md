@@ -4,21 +4,32 @@ A playground for building a tool-using agent and, more importantly, **evaluating
 
 The system under test is a customer-support agent that can check balances, issue refunds, and escalate to a human. The tools are exposed over MCP, the agent loop is a LangGraph state machine, and the eval suite runs under pytest with DeepEval.
 
+```mermaid
+flowchart TD
+    start([START]) --> planner
+    planner["<b>planner</b><br/>classify intent"] -->|in scope| agent
+    planner -->|out_of_scope| decline["<b>decline</b><br/>fixed reply"]
+    agent["<b>agent</b><br/>Claude picks tools"] -->|no tool calls| done([END])
+    agent -->|tool calls| guardrail["<b>guardrail</b><br/>check refund policy"]
+    guardrail -->|approved + blocked calls| tools["<b>tools</b><br/>run via MCP, retry"]
+    tools -->|tool results| agent
+    tools -->|failed after retries| escalate["<b>escalate</b><br/>open ticket"]
+    decline --> done
+    escalate --> done
+    guardrail -.->|lookup| mcp[("MCP server<br/>+ SQLite store")]
+    tools -.->|tools/call| mcp
+
+    classDef llm fill:#d9eff2,stroke:#0f7c8c,stroke-width:2px,color:#0b4f59
+    classDef code fill:#f4f5f7,stroke:#8a93a3,color:#1b2230
+    classDef fail fill:#fbeadf,stroke:#b4561f,color:#7a3410
+    classDef infra fill:#eef0f4,stroke:#8a93a3,stroke-dasharray:4 3,color:#1b2230
+    class planner,agent llm
+    class decline,guardrail,tools code
+    class escalate fail
+    class mcp infra
 ```
-            ┌──────────────────────┐
- user ────▶ │  LangGraph agent     │  planner → agent → guardrail → tools → (agent | escalate)
-            └──────────┬───────────┘
-                       │ MCP (stdio / in-process)
-            ┌──────────▼───────────┐
-            │  support-mcp server  │  tools: check_balance · process_refund · escalate_ticket
-            │                      │  resources: policy://refunds · account://{user_id}
-            │                      │  prompts: handle_refund_request
-            └──────────┬───────────┘
-                       │
-            ┌──────────▼───────────┐
-            │  SupportStore (SQLite)│  source of truth for policy + end-state assertions
-            └──────────────────────┘
-```
+
+Teal steps call Claude; grey steps are plain code. Dashed lines are calls to the MCP server.
 
 ## Status
 

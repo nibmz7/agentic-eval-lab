@@ -78,3 +78,12 @@ These items close the gap between "I wrote evals" and "I can tell you whether th
 - Multi-turn safety erosion: social-engineering sequences that escalate gradually.
 - A2A: split into a triage agent and a refunds agent that talk over A2A, and evaluate the handoff.
 - Map 3–5 concrete requirements (for example EU AI Act Art. 14 on human oversight, or NIST AI RMF MEASURE 2.x) to named tests in the suite.
+
+## Sprint 7: Compare models on the same suite (stretch)
+
+The graph only depends on the `ModelClient` interface, so another provider is one new class, not a rewrite.
+
+- Add `LangChainModel`, a `ModelClient` built on LangChain chat models (`ChatOpenAI`, `ChatGoogleGenerativeAI`, `ChatOllama`, …). Keep `AnthropicModel` as it is.
+- Note where LangChain's message format differs from the raw API: tool calls, tool results, and Claude's thinking blocks.
+- Run the Sprint 3 suite against several models and compare pass^k, trajectory scores, escalation accuracy, cost and latency per completed task.
+- Watch for evals that quietly favour one provider, such as prompts tuned on one model, or a judge model grading its own family.

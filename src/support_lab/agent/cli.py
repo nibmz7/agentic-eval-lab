@@ -36,14 +36,23 @@ def _describe(call: dict) -> str:
     return f"    [{call['source']}] {call['name']}({args}) → {status}{retries}"
 
 
-async def chat(customer_id: str, db: str, model_name: str, effort: str) -> None:
-    server = StdioServerParameters(
+def server_params(db: str) -> StdioServerParameters:
+    """How to launch the MCP server as a subprocess.
+
+    Only the server's own settings are passed. The MCP SDK adds a small
+    allowlist (PATH, HOME, ...) and nothing else from our environment, so the
+    server never sees ANTHROPIC_API_KEY or other secrets it doesn't need.
+    """
+    return StdioServerParameters(
         command=sys.executable,
         args=["-m", "support_lab.mcp_server"],
-        env={**os.environ, "SUPPORT_DB": db, "SUPPORT_TRANSPORT": "stdio"},
+        env={"SUPPORT_DB": db, "SUPPORT_TRANSPORT": "stdio"},
     )
+
+
+async def chat(customer_id: str, db: str, model_name: str, effort: str) -> None:
     model = AnthropicModel(model=model_name, effort=effort)
-    async with Client(server) as client:
+    async with Client(server_params(db)) as client:
         agent = await SupportAgent.create(model, McpToolbox(client))
         thread = uuid.uuid4().hex
         print(f"Chatting as {customer_id} with {model_name}. Ctrl+D to quit.\n")

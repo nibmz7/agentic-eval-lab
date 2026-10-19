@@ -31,6 +31,7 @@ The system under test is a customer-support agent that can check balances, issue
 | 4 | Langfuse tracing + write-up | ⬜ |
 | 5 | Evaluator-integrity tests | ⬜ |
 | 6 | Adversarial, authorization, governance (stretch) | ⬜ |
+| 7 | Compare models across providers on the same suite (stretch) | ⬜ |
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for each sprint's exercises, and [docs/decisions/](docs/decisions/) for design notes.
 

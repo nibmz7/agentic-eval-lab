@@ -4,21 +4,32 @@ A playground for building a tool-using agent and, more importantly, **evaluating
 
 The system under test is a customer-support agent that can check balances, issue refunds, and escalate to a human. The tools are exposed over MCP, the agent loop is a LangGraph state machine, and the eval suite runs under pytest with DeepEval.
 
+```mermaid
+flowchart TD
+    start([START]) --> planner
+    planner["<b>planner</b><br/>classify intent"] -->|in scope| agent
+    planner -->|out_of_scope| decline["<b>decline</b><br/>fixed reply"]
+    agent["<b>agent</b><br/>Claude picks tools"] -->|no tool calls| done([END])
+    agent -->|tool calls| guardrail["<b>guardrail</b><br/>check refund policy"]
+    guardrail -->|approved + blocked calls| tools["<b>tools</b><br/>run via MCP, retry"]
+    tools -->|tool results| agent
+    tools -->|failed after retries| escalate["<b>escalate</b><br/>open ticket"]
+    decline --> done
+    escalate --> done
+    guardrail -.->|lookup| mcp[("MCP server<br/>+ SQLite store")]
+    tools -.->|tools/call| mcp
+
+    classDef llm fill:#d9eff2,stroke:#0f7c8c,stroke-width:2px,color:#0b4f59
+    classDef code fill:#f4f5f7,stroke:#8a93a3,color:#1b2230
+    classDef fail fill:#fbeadf,stroke:#b4561f,color:#7a3410
+    classDef infra fill:#eef0f4,stroke:#8a93a3,stroke-dasharray:4 3,color:#1b2230
+    class planner,agent llm
+    class decline,guardrail,tools code
+    class escalate fail
+    class mcp infra
 ```
-            ┌──────────────────────┐
- user ────▶ │  LangGraph agent     │  planner → action → guardrail → (retry | escalate | respond)
-            └──────────┬───────────┘
-                       │ MCP (stdio / in-process)
-            ┌──────────▼───────────┐
-            │  support-mcp server  │  tools: check_balance · process_refund · escalate_ticket
-            │                      │  resources: policy://refunds · account://{user_id}
-            │                      │  prompts: handle_refund_request
-            └──────────┬───────────┘
-                       │
-            ┌──────────▼───────────┐
-            │  SupportStore (SQLite)│  source of truth for policy + end-state assertions
-            └──────────────────────┘
-```
+
+Teal steps call Claude; grey steps are plain code. Dashed lines are calls to the MCP server.
 
 ## Status
 
@@ -26,11 +37,12 @@ The system under test is a customer-support agent that can check balances, issue
 |---|---|---|
 | 1 | MCP tool server + backend + tests | ✅ done |
 | 1.5 | Resources, prompts, HTTP transport, bearer-token auth | ✅ done |
-| 2 | LangGraph agent with retries, guardrail, escalation | ⬜ |
+| 2 | LangGraph agent with retries, guardrail, escalation | ✅ done |
 | 3 | Eval suite: trajectory, tool-args, end-state, multi-turn | ⬜ |
 | 4 | Langfuse tracing + write-up | ⬜ |
 | 5 | Evaluator-integrity tests | ⬜ |
 | 6 | Adversarial, authorization, governance (stretch) | ⬜ |
+| 7 | Compare models across providers on the same suite (stretch) | ⬜ |
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for each sprint's exercises, and [docs/decisions/](docs/decisions/) for design notes.
 
@@ -71,6 +83,17 @@ In the Inspector, pick the Streamable HTTP transport and set the token under Aut
 | `u_bob` | active | 1500.00 | refunds over the 500.00 limit must escalate |
 | `u_carol` | suspended | 80.00 | refunds must be refused |
 | `u_dave` | active | 0.00 | nothing to refund |
+
+### Chat with the agent
+
+Needs Claude credentials: `export ANTHROPIC_API_KEY=...`, or `ant auth login`.
+
+```bash
+uv run support-agent --customer u_alice
+uv run support-agent --customer u_bob --model claude-sonnet-5-5   # cheaper model
+```
+
+Every tool call is printed under the reply, including which ones the guardrail blocked. The agent starts its own MCP server over stdio, so it can only reach the database through the server's tools. `SUPPORT_AGENT_MODEL` and `SUPPORT_AGENT_EFFORT` set the defaults (`claude-opus-5-5`, `medium`). How the agent is put together: [ADR 0003](docs/decisions/0003-agent-graph.md).
 
 ## Notes
 

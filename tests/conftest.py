@@ -8,3 +8,8 @@ def store():
     s = SupportStore.seeded()
     yield s
     s.close()
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"

@@ -17,11 +17,6 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-def anyio_backend():
-    return "asyncio"
-
-
-@pytest.fixture
 async def client(store):
     async with Client(build_server(store)) as c:
         yield c

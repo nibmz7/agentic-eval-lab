@@ -38,6 +38,7 @@ Teal steps call Claude; grey steps are plain code. Dashed lines are calls to the
 | 1 | MCP tool server + backend + tests | ✅ done |
 | 1.5 | Resources, prompts, HTTP transport, bearer-token auth | ✅ done |
 | 2 | LangGraph agent with retries, guardrail, escalation | ✅ done |
+| 2.5 | Browser sign-in (OAuth) with a demo bank login server | ✅ done |
 | 3 | Eval suite: trajectory, tool-args, end-state, multi-turn | ⬜ |
 | 4 | Langfuse tracing + write-up | ⬜ |
 | 5 | Evaluator-integrity tests | ⬜ |
@@ -58,20 +59,19 @@ uv run support-mcp            # run the MCP server over stdio
 npx @modelcontextprotocol/inspector uv run support-mcp   # poke at it in a UI
 ```
 
-### Over HTTP, with auth
+### Over HTTP, with sign-in
+
+Over HTTP the server is protected the way a bank's would be: you sign in at the bank's login page and the app gets a token for your account only. `support-auth` plays the bank's login system.
 
 ```bash
-SUPPORT_TRANSPORT=http uv run support-mcp     # http://127.0.0.1:8000/mcp
+uv run support-auth                              # terminal 1: login server, http://127.0.0.1:9000
+SUPPORT_TRANSPORT=http uv run support-mcp        # terminal 2: MCP server, http://127.0.0.1:8000/mcp
+uv run support-agent --http http://127.0.0.1:8000/mcp   # terminal 3: opens your browser to sign in
 ```
 
-HTTP requires a bearer token. Two dev tokens are built in:
+Sign in as any demo customer (`u_alice`, `u_bob`, `u_carol`, `u_dave`; no password) and choose what the app may do. The agent then acts as that customer, and the server refuses anything on another customer's account. The Inspector does the same flow: connect to `http://127.0.0.1:8000/mcp` with the Streamable HTTP transport and no token, and it opens the login page.
 
-| token | scopes | read | refund | escalate |
-|---|---|---|---|---|
-| `dev-agent` | `accounts:read refunds:write tickets:write` | ✅ | ✅ | ✅ |
-| `dev-readonly` | `accounts:read` | ✅ | ❌ | ❌ |
-
-In the Inspector, pick the Streamable HTTP transport and set the token under Authentication. Over stdio there is no auth (see [ADR 0002](docs/decisions/0002-auth-at-transport-layer.md)). `SUPPORT_HOST` and `SUPPORT_PORT` override the bind address.
+How it works: [ADR 0004](docs/decisions/0004-oauth-sign-in.md). Over stdio nobody signs in and there are no checks. `SUPPORT_HOST`, `SUPPORT_PORT` and `SUPPORT_AUTH_URL` override addresses.
 
 ### Data
 

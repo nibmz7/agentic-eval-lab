@@ -64,6 +64,12 @@ class McpToolbox:
         contents = (await self._client.read_resource("policy://refunds")).contents
         return "\n".join(c.text for c in contents if isinstance(c, TextResourceContents))
 
+    async def read_customer(self) -> str | None:
+        """The signed-in customer, or None when nobody signs in (stdio)."""
+        contents = (await self._client.read_resource("session://customer")).contents
+        text = "".join(c.text for c in contents if isinstance(c, TextResourceContents))
+        return json.loads(text)["customer_id"]
+
     async def call(self, name: str, args: dict) -> ToolOutcome:
         try:
             result = await self._client.call_tool(name, args)

@@ -1,6 +1,6 @@
 # 0002: Auth at the transport layer, for now
 
-**Status:** accepted (Sprint 1.5). To be superseded in Sprint 6.
+**Status:** superseded by [0004](0004-oauth-sign-in.md) (Sprint 2.5). The dev tokens are gone; the transport-only gap described below still applies over stdio.
 
 ## Context
 

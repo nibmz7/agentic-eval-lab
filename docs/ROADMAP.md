@@ -47,21 +47,23 @@ Design in [ADR 0004](decisions/0004-oauth-sign-in.md).
 - `support-agent --http URL` signs in through the browser and chats as the signed-in customer.
 - Tests run the whole flow against real servers, including wrong PKCE, reused codes, denied consent, unticked scopes, cross-account access and tokens issued for another server.
 
-## Sprint 3: Evaluation suite
+## Sprint 3a: Evaluation suite, deterministic part ✅
 
-Build `evals/` with a scenario dataset (YAML/JSON). Each scenario has: user turns, the expected end state (a `snapshot()` diff), acceptable tool trajectories, and whether escalation is expected.
+Design in [ADR 0005](decisions/0005-eval-scoring.md).
 
-Layer the checks from cheap and deterministic to expensive and fuzzy:
+- 19 scenarios in `evals/scenarios/`: everyday requests, the policy's edges (500.00 vs 500.01, balance, suspended and empty accounts, someone else's account), multi-turn behaviour (clarifying, repeating, pushing back) and backend failures.
+- Each run gets a fresh database and MCP server. Crashes and step-limit hits count as failures.
+- Layered scoring: end state, trajectory (DeepEval `ToolCorrectnessMetric` plus order, forbidden tools, own-account and no-repeat checks), efficiency, escalation (correct / missed / unnecessary), per-turn checks. Intent is reported but not scored.
+- pass@1 and pass^k over k runs per scenario, a terminal report and a JSON file per run.
+- Tests prove the suite catches deliberately broken agents: always refunds, refunds twice, skips the balance check, refunds another customer, repeats a refund on the next turn.
+- `uv run support-eval`, defaulting to Claude Haiku 5.5, the cheapest model.
 
-1. **End-state** (τ²-bench style): diff `snapshot()` before and after. This is the primary pass/fail signal.
-2. **Trajectory**: DeepEval `ToolCorrectnessMetric` for tool selection and arguments. Write your own ordering check too: `check_balance` before `process_refund`, no duplicate refunds.
-3. **Efficiency**: number of steps and redundant calls compared with the shortest valid path.
-4. **Deferral**: did it escalate when it should have, and *only* then? Score false escalations as well as missed ones.
-5. **LLM-judge** (DeepEval `GEval` / `TaskCompletionMetric`): only for things the first four can't see, such as tone or whether the reply explained the refusal. Calibrate the judge on 20 or so hand-labelled cases before trusting it.
+## Sprint 3b: Judge, calibration, baseline
 
-**Run each scenario k times** and report pass^k (all k runs pass), not just the mean. Agents are stochastic, and a single run overstates reliability.
-
-**Multi-turn drift:** scenarios where the user changes the amount mid-conversation, asks for a second refund after the first, or pushes back after a refusal ("my manager said it's fine"). Assert on behaviour at each turn, not only the last.
+- Reply quality with DeepEval `GEval` and Claude as the judge: did the agent explain refusals, ask for missing amounts, and never claim something succeeded when it didn't? Only for what the deterministic layers can't see.
+- Calibrate the judge: hand-label about 20 replies, measure agreement, adjust the criteria until it agrees.
+- Record token usage and cost per run.
+- Run the suite on real Claude, keep the first results as a baseline, and investigate the failures.
 
 ## Sprint 4: Observability and write-up
 

@@ -6,14 +6,17 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "anthropic>=1.15.0",
+    "deepeval>=4.3.1",
     "langgraph>=1.2.16",
     "mcp>=2.3.0",
+    "pyyaml>=6.0.3",
 ]
 
 [project.scripts]
 support-mcp = "support_lab.mcp_server.server:main"
 support-agent = "support_lab.agent.cli:main"
 support-auth = "support_lab.auth_server.app:main"
+support-eval = "support_lab.evals.cli:main"
 
 [build-system]
 requires = ["uv_build>=0.11.32,<0.12.0"]

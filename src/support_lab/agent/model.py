@@ -22,8 +22,14 @@ Block = dict[str, Any]
 Message = dict[str, Any]
 
 DEFAULT_MODEL = "claude-opus-5-5"
+CHEAPEST_MODEL = "claude-haiku-5-5"
 # Re-runs a request on another model server-side if the first one declines it.
 FALLBACK_BETA = "server-side-fallback-2026-07-01"
+
+
+def supports_fallback(model: str) -> bool:
+    """Haiku has no server-side fallback, and the docs say not to send the parameter."""
+    return not model.startswith("claude-haiku")
 
 
 class Intent(StrEnum):
@@ -76,17 +82,19 @@ class AnthropicModel:
         self.model = model
         self.effort = effort
         self.max_tokens = max_tokens
+        self._fallback: dict[str, Any] = (
+            {"betas": [FALLBACK_BETA], "fallbacks": "default"} if supports_fallback(model) else {}
+        )
 
     async def classify(self, transcript: str) -> Intent:
         response = await self._client.beta.messages.parse(
             model=self.model,
             max_tokens=4096,
-            betas=[FALLBACK_BETA],
-            fallbacks="default",
             output_config={"effort": "low"},
             system=CLASSIFIER_SYSTEM,
             messages=[{"role": "user", "content": transcript}],
             output_format=_IntentChoice,
+            **self._fallback,
         )
         if response.stop_reason == "refusal" or response.parsed_output is None:
             return Intent.GENERAL
@@ -98,12 +106,11 @@ class AnthropicModel:
         response = await self._client.beta.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
-            betas=[FALLBACK_BETA],
-            fallbacks="default",
             output_config={"effort": self.effort},  # type: ignore[typeddict-item]
             system=system,
             messages=messages,  # type: ignore[arg-type]
             tools=tools,  # type: ignore[arg-type]
+            **self._fallback,
         )
         return ModelTurn(
             content=[block.to_dict() for block in response.content],

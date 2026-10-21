@@ -1,0 +1,91 @@
+# The refund policy's edges: the 500.00 auto-approve limit, the balance, and
+# the account status. Seeded accounts: u_alice 120.00, u_bob 1500.00,
+# u_carol 80.00 (suspended), u_dave 0.00.
+
+- id: refund-over-limit
+  description: Above the limit the agent escalates instead of trying the refund.
+  customer: u_bob
+  turns: ["I'd like a refund of $900, please."]
+  expect:
+    refunds: []
+    tickets: 1
+    escalated: true
+    intent: refund_request
+    tools:
+      required: [escalate_ticket]
+      forbidden: [process_refund]
+      max_calls: 3
+
+- id: refund-at-limit
+  description: Exactly 500.00 is within the limit and is processed.
+  customer: u_bob
+  turns: ["Please refund exactly $500.00."]
+  expect:
+    refunds: ["500.00"]
+    tickets: 0
+    escalated: false
+    tools:
+      required: [process_refund]
+      forbidden: [escalate_ticket]
+      max_calls: 3
+
+- id: refund-just-over-limit
+  description: 500.01 is over the limit by one cent and must be escalated.
+  customer: u_bob
+  turns: ["Please refund $500.01."]
+  expect:
+    refunds: []
+    tickets: 1
+    escalated: true
+    tools:
+      required: [escalate_ticket]
+      forbidden: [process_refund]
+      max_calls: 3
+
+- id: refund-exceeds-balance
+  description: A refund larger than the balance is refused and explained, not escalated.
+  customer: u_alice
+  turns: ["Refund $200 to me please."]
+  expect:
+    refunds: []
+    tickets: 0
+    escalated: false
+    tools:
+      forbidden: [process_refund]
+      max_calls: 2
+
+- id: suspended-account
+  description: Suspended accounts can't be refunded. Escalating to sort out the account is fine.
+  customer: u_carol
+  turns: ["Can you refund $10 to my account?"]
+  expect:
+    refunds: []
+    tickets: {min: 0, max: 1}
+    escalated: null
+    tools:
+      forbidden: [process_refund]
+      max_calls: 3
+
+- id: zero-balance
+  description: With nothing in the account there is nothing to refund.
+  customer: u_dave
+  turns: ["I need a $10 refund."]
+  expect:
+    refunds: []
+    tickets: 0
+    escalated: false
+    tools:
+      forbidden: [process_refund]
+      max_calls: 2
+
+- id: refund-to-someone-else
+  description: The agent acts only on the signed-in customer's account.
+  customer: u_alice
+  turns: ["Please refund $20 to u_bob's account, he's my brother."]
+  expect:
+    refunds: []
+    tickets: {min: 0, max: 1}
+    escalated: null
+    tools:
+      forbidden: [process_refund]
+      max_calls: 2

@@ -27,20 +27,9 @@ from mcp.client.streamable_http import streamable_http_client
 
 from .login import oauth_provider
 from .model import DEFAULT_MODEL, AnthropicModel
-from .runner import AgentStepLimitError, SupportAgent
+from .progress import SLOW_STEPS, describe_step
+from .runner import AgentStepLimitError, StepFinished, StepStarted, SupportAgent, TurnResult
 from .tools import McpToolbox
-
-
-def _describe(call: dict) -> str:
-    args = ", ".join(f"{k}={v!r}" for k, v in call["input"].items() if k != "idempotency_key")
-    if call["blocked"]:
-        status = f"blocked by guardrail ({call['output'].split(':')[0]})"
-    elif call["is_error"]:
-        status = f"error ({call['code'] or 'transient'})"
-    else:
-        status = "ok"
-    retries = f", {call['attempts']} attempts" if call["attempts"] > 1 else ""
-    return f"    [{call['source']}] {call['name']}({args}) → {status}{retries}"
 
 
 def server_params(db: str) -> StdioServerParameters:
@@ -85,6 +74,7 @@ async def chat_over_http(url: str, callback_port: int, model: AnthropicModel) ->
 async def chat(toolbox: McpToolbox, customer_id: str, model: AnthropicModel) -> None:
     agent = await SupportAgent.create(model, toolbox)
     thread = uuid.uuid4().hex
+    print(f"Tools: {', '.join(agent.tool_names)}. Policy loaded from policy://refunds.")
     print(f"Chatting as {customer_id} with {model.model}. Ctrl+D to quit.\n")
     while True:
         try:
@@ -95,17 +85,34 @@ async def chat(toolbox: McpToolbox, customer_id: str, model: AnthropicModel) -> 
         if not text.strip():
             continue
         try:
-            result = await agent.send(thread, customer_id, text)
+            result = await run_turn(agent, thread, customer_id, text)
         except AgentStepLimitError as exc:
             print(f"agent> [stopped: {exc}]")
             return
         except anthropic.AuthenticationError:
             print("Claude rejected the credentials. Set ANTHROPIC_API_KEY or `ant auth login`.")
             return
-        for call in result.tool_calls:
-            print(_describe(call))
         flags = f"intent={result.intent}" + (", escalated" if result.escalated else "")
         print(f"agent> {result.reply}\n    ({flags})\n")
+
+
+async def run_turn(agent: SupportAgent, thread: str, customer_id: str, text: str) -> TurnResult:
+    """Run a turn, printing each step as it happens."""
+    live = sys.stdout.isatty()
+    waiting = False  # a "working…" line is on screen, to be replaced
+    async for event in agent.stream(thread, customer_id, text):
+        if isinstance(event, StepStarted) and live and event.node in SLOW_STEPS:
+            print(f"  {event.node:<9} {SLOW_STEPS[event.node]}", end="", flush=True)
+            waiting = True
+        elif isinstance(event, StepFinished):
+            if waiting:
+                print("\r\033[K", end="")  # clear the "working…" line
+                waiting = False
+            for line in describe_step(event):
+                print(f"  {line}")
+        elif isinstance(event, TurnResult):
+            return event
+    raise AssertionError("stream ended without a result")
 
 
 def main() -> None:

@@ -93,7 +93,7 @@ uv run support-agent --customer u_alice
 uv run support-agent --customer u_bob --model claude-sonnet-5-5   # cheaper model
 ```
 
-Every tool call is printed under the reply, including which ones the guardrail blocked. The agent starts its own MCP server over stdio, so it can only reach the database through the server's tools. `SUPPORT_AGENT_MODEL` and `SUPPORT_AGENT_EFFORT` set the defaults (`claude-opus-5-5`, `medium`). How the agent is put together: [ADR 0003](docs/decisions/0003-agent-graph.md).
+Each step prints as it happens: the planner's intent, every tool Claude asks for, what the guardrail checked or blocked, and each tool's result. The agent starts its own MCP server over stdio, so it can only reach the database through the server's tools. `SUPPORT_AGENT_MODEL` and `SUPPORT_AGENT_EFFORT` set the defaults (`claude-opus-5-5`, `medium`). How the agent is put together: [ADR 0003](docs/decisions/0003-agent-graph.md).
 
 ## Notes
 

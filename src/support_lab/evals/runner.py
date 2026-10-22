@@ -102,12 +102,12 @@ async def run_scenarios(
     scenarios: list[Scenario],
     make_model: ModelFactory,
     *,
-    k: int = 1,
+    runs: int = 1,
     concurrency: int = 4,
     settings: AgentSettings | None = None,
     on_done: Callable[[RunRecord], None] | None = None,
 ) -> list[RunRecord]:
-    """Run every scenario k times. Records come back in scenario order, then run order."""
+    """Run every scenario `runs` times. Records come back in scenario order, then run order."""
     settings = settings or AgentSettings()
     limiter = anyio.CapacityLimiter(concurrency)
     results: dict[tuple[str, int], RunRecord] = {}
@@ -121,6 +121,6 @@ async def run_scenarios(
 
     async with anyio.create_task_group() as group:
         for scenario in scenarios:
-            for run in range(1, k + 1):
+            for run in range(1, runs + 1):
                 group.start_soon(one, scenario, run)
-    return [results[(s.id, r)] for s in scenarios for r in range(1, k + 1)]
+    return [results[(s.id, r)] for s in scenarios for r in range(1, runs + 1)]

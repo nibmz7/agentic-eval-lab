@@ -1,7 +1,7 @@
 """Run the scenario suite against Claude.
 
-    uv run support-eval                       # every scenario, 3 runs each, Claude Haiku 5.5
-    uv run support-eval --only refund-over-limit --k 5
+    uv run support-eval                       # every scenario, 5 runs each, Claude Haiku 5.5
+    uv run support-eval --only refund-over-limit --runs 8
     uv run support-eval --model claude-sonnet-5-5
 
 Needs Claude credentials (ANTHROPIC_API_KEY, or `ant auth login`). Every run
@@ -35,7 +35,12 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the scenario suite against Claude.")
     parser.add_argument("--scenarios", type=Path, default=DEFAULT_SCENARIOS)
     parser.add_argument("--only", nargs="+", metavar="ID", help="run only these scenario ids")
-    parser.add_argument("--k", type=int, default=3, help="runs per scenario (default 3)")
+    parser.add_argument(
+        "--runs",
+        type=int,
+        default=5,
+        help="runs per scenario, n (default 5); pass^k is shown up to k=n",
+    )
     parser.add_argument("--model", default=CHEAPEST_MODEL, help=f"default {CHEAPEST_MODEL}")
     parser.add_argument("--effort", default="medium")
     parser.add_argument("--concurrency", type=int, default=4)
@@ -54,7 +59,7 @@ def main() -> None:
         scenarios = [s for s in scenarios if s.id in args.only]
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     out = args.out or Path("evals/results") / f"{stamp}.json"
-    print(f"{len(scenarios)} scenarios × {args.k} runs = {len(scenarios) * args.k} runs "
+    print(f"{len(scenarios)} scenarios × {args.runs} runs = {len(scenarios) * args.runs} runs "
           f"on {args.model} (effort {args.effort})\n")  # fmt: skip
 
     client = anthropic.AsyncAnthropic()
@@ -69,15 +74,19 @@ def main() -> None:
     try:
         records = anyio.run(
             lambda: run_scenarios(
-                scenarios, make_model, k=args.k, concurrency=args.concurrency, on_done=progress
+                scenarios,
+                make_model,
+                runs=args.runs,
+                concurrency=args.concurrency,
+                on_done=progress,
             )
         )
     except KeyboardInterrupt:
         sys.exit("Stopped.")
     by_id = {s.id: s for s in scenarios}
     scores = [score_run(by_id[r.scenario_id], r) for r in records]
-    summary = summarize(scores, args.k)
+    summary = summarize(scores)
     print("\n" + render(summary))
-    meta = {"model": args.model, "effort": args.effort, "k": args.k, "started": stamp}
+    meta = {"model": args.model, "effort": args.effort, "runs": args.runs, "started": stamp}
     write_json(out, summary, scores, meta)
     print(f"\nFull results: {out}")

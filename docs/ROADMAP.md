@@ -54,7 +54,7 @@ Design in [ADR 0005](decisions/0005-eval-scoring.md).
 - 19 scenarios in `evals/scenarios/`: everyday requests, the policy's edges (500.00 vs 500.01, balance, suspended and empty accounts, someone else's account), multi-turn behaviour (clarifying, repeating, pushing back) and backend failures.
 - Each run gets a fresh database and MCP server. Crashes and step-limit hits count as failures.
 - Layered scoring: end state, trajectory (DeepEval `ToolCorrectnessMetric` plus order, forbidden tools, own-account and no-repeat checks), efficiency, escalation (correct / missed / unnecessary), per-turn checks. Intent is reported but not scored.
-- pass@1 and pass^k over k runs per scenario, a terminal report and a JSON file per run.
+- pass^1 … pass^n from n runs per scenario, estimated the way τ-bench does, plus a terminal report and a JSON file per run.
 - Tests prove the suite catches deliberately broken agents: always refunds, refunds twice, skips the balance check, refunds another customer, repeats a refund on the next turn.
 - `uv run support-eval`, defaulting to Claude Haiku 5.5, the cheapest model.
 

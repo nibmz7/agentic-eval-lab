@@ -29,7 +29,13 @@ A support agent's replies vary from run to run, and several different tool seque
 
 **Crashes are failures.** An exception, a model API error or the step limit makes the run fail in the `crash` layer. Layer pass rates are computed over completed runs and the report says how many, so crashes can't make the other layers look better.
 
-**pass^k, not just the average.** Each scenario runs k times. pass@1 is the share of runs that passed; pass^k is the share of scenarios that passed every time. A customer gets one try, so an agent that passes 80% of runs but fails every scenario sometimes is not reliable.
+**pass^k, estimated the way τ-bench does.** Each scenario runs n times (`--runs`, default 5). For a scenario with c passes, pass^k is the chance that k runs picked at random from its n are all passes, `C(c, k) / C(n, k)`, averaged over scenarios. The report prints pass^1 to pass^n from the same runs:
+
+- pass^1 is plain accuracy.
+- pass^n is the share of scenarios that passed every run.
+- The values in between show how fast reliability drops when the agent must be right repeatedly.
+
+A customer gets one try, and the same request arrives many times, so the high end of that curve matters more than the average. Compared with counting "passed all k runs", the estimate uses every run and gives a fraction per scenario instead of yes/no, so one unlucky run moves the score a little instead of flipping it. It's unbiased, and it doesn't assume every scenario is equally reliable, which raising accuracy to the power k would.
 
 **The suite is tested with broken agents.** Scripted agents that always refund, refund twice, skip the balance check, refund another customer, or repeat a refund on the next turn must each fail, on the expected layers. If a broken agent ever passes, the suite has a bug.
 

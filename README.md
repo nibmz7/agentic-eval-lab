@@ -39,7 +39,7 @@ Teal steps call Claude; grey steps are plain code. Dashed lines are calls to the
 | 1.5 | Resources, prompts, HTTP transport, bearer-token auth | ✅ done |
 | 2 | LangGraph agent with retries, guardrail, escalation | ✅ done |
 | 2.5 | Browser sign-in (OAuth) with a demo bank login server | ✅ done |
-| 3a | Eval suite: scenarios, deterministic scoring, pass^k | ✅ done |
+| 3a | Eval suite: scenarios, deterministic scoring, τ-bench pass^k | ✅ done |
 | 3b | Eval suite: Claude judge for replies, calibration, real-model baseline | ⬜ |
 | 4 | Langfuse tracing + write-up | ⬜ |
 | 5 | Evaluator-integrity tests | ⬜ |
@@ -99,12 +99,12 @@ Each step prints as it happens: the planner's intent, every tool Claude asks for
 ### Run the evals
 
 ```bash
-uv run support-eval                          # 19 scenarios × 3 runs on Claude Haiku 5.5
-uv run support-eval --only refund-over-limit --k 5
+uv run support-eval                          # 19 scenarios × 5 runs on Claude Haiku 5.5
+uv run support-eval --only refund-over-limit --runs 8
 uv run support-eval --model claude-sonnet-5-5
 ```
 
-Each run gets a fresh database. Runs are scored on the end state of the database, the tools called, efficiency and escalation; crashes count as failures. The report shows pass@1 (share of runs that passed) and pass^k (share of scenarios that passed every run). Full details go to `evals/results/`. Scenarios are YAML in [`evals/scenarios/`](evals/scenarios/), and the scoring is described in [ADR 0005](docs/decisions/0005-eval-scoring.md). DeepEval's usage telemetry is turned off.
+Each run gets a fresh database. Runs are scored on the end state of the database, the tools called, efficiency and escalation; crashes count as failures. The report shows pass^1 to pass^n: the chance the agent gets a scenario right k times in a row, estimated from all n runs the way τ-bench does. pass^1 is plain accuracy. Full details go to `evals/results/`. Scenarios are YAML in [`evals/scenarios/`](evals/scenarios/), and the scoring is described in [ADR 0005](docs/decisions/0005-eval-scoring.md). DeepEval's usage telemetry is turned off.
 
 ## Notes
 

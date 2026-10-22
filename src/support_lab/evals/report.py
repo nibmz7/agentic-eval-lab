@@ -1,14 +1,20 @@
 """Summaries of scored runs: per scenario, per layer, and overall.
 
-pass@1 is the share of all runs that passed. pass^k is the share of scenarios
-that passed in *every* one of their k runs, which is what matters when a
-customer gets one try: an agent that passes 80% of runs can still fail most
-scenarios at least once.
+Each scenario runs n times. pass^k is the chance the agent gets a scenario
+right k times in a row, estimated the way τ-bench does: for a scenario with c
+passes out of n runs, it's the chance that k runs picked at random from those
+n are all passes, C(c, k) / C(n, k), averaged over scenarios.
+
+pass^1 is plain accuracy. pass^n is the share of scenarios that passed every
+run. The values in between show how fast reliability drops when the agent has
+to be right repeatedly, all from the same n runs. Being right once is not
+enough for an agent handling money: the same request comes in again and again.
 """
 
 from __future__ import annotations
 
 import json
+import math
 from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -29,13 +35,19 @@ class ScenarioSummary:
         return self.passed == self.runs
 
 
+def pass_hat_k(passed: int, runs: int, k: int) -> float:
+    """τ-bench's unbiased estimate of k-in-a-row success for one scenario."""
+    if not 1 <= k <= runs:
+        raise ValueError(f"k must be between 1 and {runs}, got {k}")
+    return math.comb(passed, k) / math.comb(runs, k)
+
+
 @dataclass
 class Summary:
     scenarios: list[ScenarioSummary]
     runs: int
-    pass_at_1: float
-    pass_k: float
-    k: int
+    runs_per_scenario: int  # n
+    pass_hat: dict[int, float]  # k -> pass^k, for k = 1..n
     layer_pass_rate: dict[str, float]  # share of completed runs with no failure in that layer
     completed: int
     escalation: dict[str, int]  # correct / missed / unnecessary
@@ -44,7 +56,7 @@ class Summary:
     crash_reasons: dict[str, int]
 
 
-def summarize(scores: list[RunScore], k: int) -> Summary:
+def summarize(scores: list[RunScore]) -> Summary:
     by_scenario: dict[str, list[RunScore]] = defaultdict(list)
     for score in scores:
         by_scenario[score.record.scenario_id].append(score)
@@ -65,14 +77,18 @@ def summarize(scores: list[RunScore], k: int) -> Summary:
             continue
         failed = sum(any(c.layer == layer and not c.passed for c in s.checks) for s in completed)
         layer_rate[layer] = 1 - failed / len(completed)
+    n = min((s.runs for s in scenarios), default=0)
+    pass_hat = {
+        k: sum(pass_hat_k(s.passed, s.runs, k) for s in scenarios) / len(scenarios)
+        for k in range(1, n + 1)
+    }
     intents = [c for s in scores for c in s.checks if c.layer == "intent"]
     escalation = Counter(o for s in scores if (o := s.escalation_outcome))
     return Summary(
         scenarios=scenarios,
         runs=len(scores),
-        pass_at_1=sum(s.passed for s in scores) / len(scores) if scores else 0.0,
-        pass_k=sum(s.passed_every_run for s in scenarios) / len(scenarios) if scenarios else 0.0,
-        k=k,
+        runs_per_scenario=n,
+        pass_hat=pass_hat,
         layer_pass_rate=layer_rate,
         escalation={o: escalation.get(o, 0) for o in ("correct", "missed", "unnecessary")},
         intent_accuracy=sum(c.passed for c in intents) / len(intents) if intents else None,
@@ -95,9 +111,11 @@ def render(summary: Summary) -> str:
         lines.append(f"{s.scenario_id:<{width}}  {s.passed:>2}/{s.runs:<3}  {mark:<9}  {failing}")
     lines.append("")
     lines.append(
-        f"runs: {summary.runs}   pass@1: {summary.pass_at_1:.0%}   "
-        f"pass^{summary.k}: {summary.pass_k:.0%}   crashes: {summary.crashes}"
+        f"runs: {summary.runs} ({summary.runs_per_scenario} per scenario)   "
+        f"crashes: {summary.crashes}"
     )
+    curve = "   ".join(f"^{k} {v:.0%}" for k, v in summary.pass_hat.items())
+    lines.append(f"pass^k (right k times in a row): {curve}")
     if summary.layer_pass_rate:
         rates = "   ".join(f"{layer} {r:.0%}" for layer, r in summary.layer_pass_rate.items())
         lines.append(f"by layer ({summary.completed} completed runs): {rates}")

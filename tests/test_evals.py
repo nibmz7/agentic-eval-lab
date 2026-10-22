@@ -13,7 +13,7 @@ from support_lab.agent import AgentSettings, Intent
 from support_lab.agent.scripted import ScriptedModel, text, tool_use
 from support_lab.backend import SupportStore
 from support_lab.evals.checks import score_run
-from support_lab.evals.report import render, summarize
+from support_lab.evals.report import pass_hat_k, render, summarize
 from support_lab.evals.runner import run_scenarios
 from support_lab.evals.scenario import ScenarioError, load_scenarios, parse_scenario
 
@@ -23,10 +23,13 @@ SCENARIOS = {s.id: s for s in load_scenarios(Path(__file__).parent.parent / "eva
 FAST = AgentSettings(retry_delays=())
 
 
-async def evaluate(scenario_id: str, *turns, intent=Intent.GENERAL, k: int = 1):
+async def evaluate(scenario_id: str, *turns, intent=Intent.GENERAL, runs: int = 1):
     scenario = SCENARIOS[scenario_id]
     records = await run_scenarios(
-        [scenario], lambda s, run: ScriptedModel(list(turns), intent=intent), k=k, settings=FAST
+        [scenario],
+        lambda s, run: ScriptedModel(list(turns), intent=intent),
+        runs=runs,
+        settings=FAST,
     )
     return [score_run(scenario, r) for r in records]
 
@@ -215,7 +218,19 @@ async def test_a_crash_is_a_failed_run_not_a_skipped_one():
     assert "model API unreachable" in (record.error or "")
 
 
-async def test_pass_k_requires_every_run_to_pass():
+def test_pass_hat_k_matches_hand_calculation():
+    # 5 runs each: three scenarios passed 5/5, two passed 4/5.
+    per_scenario = [5, 5, 5, 4, 4]
+    curve = [sum(pass_hat_k(c, 5, k) for c in per_scenario) / 5 for k in range(1, 6)]
+    assert curve == pytest.approx([0.92, 0.84, 0.76, 0.68, 0.60])
+
+
+def test_pass_hat_k_rejects_k_outside_the_runs():
+    with pytest.raises(ValueError):
+        pass_hat_k(3, 3, 4)
+
+
+async def test_report_shows_the_reliability_curve():
     scenario = SCENARIOS["small-refund"]
     good = [
         [tool_use("check_balance", user_id="u_alice")],
@@ -227,15 +242,16 @@ async def test_pass_k_requires_every_run_to_pass():
     records = await run_scenarios(
         [scenario],
         lambda s, run: ScriptedModel(bad if run == 2 else good),
-        k=3,
+        runs=3,
         settings=FAST,
     )
-    summary = summarize([score_run(scenario, r) for r in records], k=3)
+    summary = summarize([score_run(scenario, r) for r in records])
 
-    assert summary.pass_at_1 == pytest.approx(2 / 3)
-    assert summary.pass_k == 0
+    # 2 of 3 runs passed: ^1 = 2/3, ^2 = C(2,2)/C(3,2) = 1/3, ^3 = 0.
+    assert summary.pass_hat == pytest.approx({1: 2 / 3, 2: 1 / 3, 3: 0.0})
     report = render(summary)
-    assert "small-refund" in report and "2/3" in report and "pass^3: 0%" in report
+    assert "small-refund" in report and "2/3" in report
+    assert "^1 67%   ^2 33%   ^3 0%" in report
 
 
 def test_deepeval_telemetry_is_off():

@@ -4,6 +4,11 @@
     # open the labels file and set `human: pass` or `human: fail` on each item
     uv run support-eval-calibrate score evals/results/<run>.json evals/labels/<file>.yaml
 
+    # after rewording criteria in evals/scenarios/, judge the same conversations again
+    uv run support-eval-calibrate rejudge evals/results/<run>.json
+    uv run support-eval-calibrate score evals/results/<run>.rejudged-<time>.json \
+        evals/labels/<file>.yaml
+
 `sample` picks judged replies, half the judge passed and half it failed where
 possible, and writes them *without* the judge's verdicts, so its answer can't
 sway yours. `score` compares your labels with the judge's.
@@ -16,7 +21,9 @@ Two numbers matter:
   criteria before trusting the judge.
 
 Disagreements are listed with the judge's reason. Read them: often the
-criterion is ambiguous, and rewording it fixes the judge.
+criterion is ambiguous, and rewording it fixes the judge. `rejudge` then runs
+the judge again on the *same* saved conversations, so the labels you already
+made still apply and you can compare wordings without labelling again.
 """
 
 from __future__ import annotations
@@ -24,15 +31,23 @@ from __future__ import annotations
 import argparse
 import json
 import random
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import anthropic
+import anyio
 import yaml
 
-from .judge import criteria_for, transcript_from_turns
-from .scenario import load_scenarios
+from support_lab.agent.model import CHEAPEST_MODEL
+
+from .checks import RunScore
+from .judge import ClaudeJudge, criteria_for, judge_scores, transcript_from_turns
+from .report import load_scores, summarize, write_json
+from .report import render as render_report
+from .scenario import Scenario, load_scenarios
 
 DEFAULT_SCENARIOS = Path("evals/scenarios")
 DEFAULT_LABELS_DIR = Path("evals/labels")
@@ -46,13 +61,14 @@ class JudgedItem:
     judge_passed: bool
     judge_detail: str
     turns: list[dict[str, Any]]
+    judge_error: bool = False  # the judge failed to score this item
 
 
 def judged_items(results: dict[str, Any]) -> list[JudgedItem]:
     items = []
     for run in results["runs"]:
         for check in run["checks"]:
-            if check["layer"] != "reply" or check["detail"].startswith("judge error"):
+            if check["layer"] != "reply":
                 continue
             items.append(
                 JudgedItem(
@@ -62,6 +78,7 @@ def judged_items(results: dict[str, Any]) -> list[JudgedItem]:
                     judge_passed=check["passed"],
                     judge_detail=check["detail"],
                     turns=run["turns"],
+                    judge_error=check["detail"].startswith("judge error"),
                 )
             )
     return items
@@ -70,8 +87,9 @@ def judged_items(results: dict[str, Any]) -> list[JudgedItem]:
 def sample(items: list[JudgedItem], n: int, seed: int = 0) -> list[JudgedItem]:
     """Up to n items, balanced between judge passes and failures where possible."""
     rng = random.Random(seed)
-    passed = [i for i in items if i.judge_passed]
-    failed = [i for i in items if not i.judge_passed]
+    usable = [i for i in items if not i.judge_error]
+    passed = [i for i in usable if i.judge_passed]
+    failed = [i for i in usable if not i.judge_passed]
     rng.shuffle(passed)
     rng.shuffle(failed)
     take_failed = min(len(failed), n // 2)
@@ -131,6 +149,8 @@ class Agreement:
     judge_too_lenient: int  # judge passed, you failed
     judge_too_strict: int  # judge failed, you passed
     disagreements: list[tuple[JudgedItem, bool, str]]  # item, your label, your note
+    unmatched: list[str]  # labelled ids not in the results (criterion renamed or removed?)
+    judge_failed: list[str]  # labelled ids the judge couldn't score in these results
 
     @property
     def rate(self) -> float:
@@ -140,12 +160,18 @@ class Agreement:
 def agreement(items: list[JudgedItem], labels: list[dict[str, Any]]) -> Agreement:
     by_id = {i.id: i for i in items}
     pairs: list[tuple[JudgedItem, bool, str]] = []
+    unmatched: list[str] = []
+    judge_failed: list[str] = []
     for label in labels:
         human = _verdict(label.get("human"))
         if human is None:
             continue
         if label["id"] not in by_id:
-            raise ValueError(f"label {label['id']!r} isn't in this results file")
+            unmatched.append(label["id"])
+            continue
+        if by_id[label["id"]].judge_error:
+            judge_failed.append(label["id"])
+            continue
         pairs.append((by_id[label["id"]], human, label.get("note") or ""))
     n = len(pairs)
     agree = sum(item.judge_passed == human for item, human, _ in pairs)
@@ -164,12 +190,28 @@ def agreement(items: list[JudgedItem], labels: list[dict[str, Any]]) -> Agreemen
         judge_too_lenient=lenient,
         judge_too_strict=strict,
         disagreements=[(i, h, note) for i, h, note in pairs if i.judge_passed != h],
+        unmatched=unmatched,
+        judge_failed=judge_failed,
     )
 
 
 def render(result: Agreement) -> str:
+    unmatched = ""
+    if result.judge_failed:
+        unmatched += (
+            f"\nThe judge couldn't score these (see the judge errors in the results): "
+            f"{', '.join(result.judge_failed)}"
+        )
+    if result.unmatched:
+        unmatched += (
+            f"\nNot in this results file (criterion renamed or removed?): "
+            f"{', '.join(result.unmatched)}"
+        )
     if not result.labelled:
-        return "No labelled items yet: set `human: pass` or `human: fail` in the labels file."
+        return (
+            "No labelled items yet: set `human: pass` or `human: fail` in the labels file."
+            + unmatched
+        )
     kappa = "n/a (everything got the same label)" if result.kappa is None else f"{result.kappa:.2f}"
     lines = [
         f"labelled: {result.labelled}   agreement: {result.rate:.0%}   Cohen's kappa: {kappa}",
@@ -183,7 +225,25 @@ def render(result: Agreement) -> str:
         lines.append(f"  judge said: {item.judge_detail}")
         if note:
             lines.append(f"  your note: {note}")
-    return "\n".join(lines)
+    return "\n".join(lines) + unmatched
+
+
+async def rejudge(
+    scores: list[RunScore],
+    scenarios: dict[str, Scenario],
+    make_judge: Callable[[], ClaudeJudge],
+    *,
+    concurrency: int = 4,
+) -> None:
+    """Replace each run's judge verdicts with fresh ones from the current criteria."""
+    missing = sorted({s.record.scenario_id for s in scores} - set(scenarios))
+    if missing:
+        raise ValueError(f"scenarios no longer exist: {missing}")
+    for score in scores:
+        score.checks = [c for c in score.checks if c.layer != "reply"]
+        score.record.judge_model = None
+        score.record.judge_usage = []
+    await judge_scores(scenarios, scores, make_judge, concurrency=concurrency)
 
 
 def main() -> None:
@@ -198,13 +258,43 @@ def main() -> None:
     c = sub.add_parser("score", help="compare your labels with the judge")
     c.add_argument("results", type=Path)
     c.add_argument("labels", type=Path)
+    r = sub.add_parser("rejudge", help="judge saved conversations again with the current criteria")
+    r.add_argument("results", type=Path)
+    r.add_argument("--judge-model", default=CHEAPEST_MODEL)
+    r.add_argument("--scenarios", type=Path, default=DEFAULT_SCENARIOS)
+    r.add_argument("--concurrency", type=int, default=4)
+    r.add_argument("--out", type=Path)
     args = parser.parse_args()
 
     results = json.loads(args.results.read_text())
+    if args.command == "rejudge":
+        scenarios = {s.id: s for s in load_scenarios(args.scenarios)}
+        scores = load_scores(results, {i: s.customer for i, s in scenarios.items()})
+        client = anthropic.AsyncAnthropic()
+        print(f"Judging {len(scores)} saved runs again with {args.judge_model}…")
+        anyio.run(
+            lambda: rejudge(
+                scores,
+                scenarios,
+                lambda: ClaudeJudge(args.judge_model, client=client),
+                concurrency=args.concurrency,
+            )
+        )
+        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+        out = args.out or args.results.with_name(f"{args.results.stem}.rejudged-{stamp}.json")
+        meta = {**results.get("meta", {}), "judge_model": args.judge_model}
+        meta["rejudged_from"] = str(args.results)
+        summary = summarize(scores)
+        write_json(out, summary, scores, meta)
+        print(render_report(summary))
+        print(f"\nWrote {out}. Compare with your labels using `score`.")
+        return
     items = judged_items(results)
     if args.command == "sample":
-        if not items:
-            raise SystemExit("No judged replies in this results file (was it run with --no-judge?)")
+        if not any(not i.judge_error for i in items):
+            raise SystemExit(
+                "No judged replies in this results file (run with --no-judge, or the judge failed)"
+            )
         criteria = {s.id: criteria_for(s) for s in load_scenarios(args.scenarios)}
         chosen = sample(items, args.n, args.seed)
         stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")

@@ -13,11 +13,17 @@ import pytest
 
 from support_lab.agent import AgentSettings, Intent
 from support_lab.agent.scripted import ScriptedModel, text, tool_use
-from support_lab.evals.calibrate import agreement, judged_items, labels_document, sample
+from support_lab.evals.calibrate import (
+    agreement,
+    judged_items,
+    labels_document,
+    rejudge,
+    sample,
+)
 from support_lab.evals.checks import score_run
 from support_lab.evals.judge import GENERAL_CRITERIA, ClaudeJudge, judge_scores, transcript
 from support_lab.evals.pricing import call_cost
-from support_lab.evals.report import render, summarize
+from support_lab.evals.report import load_scores, render, summarize, write_json
 from support_lab.evals.runner import RunRecord, run_scenarios
 from support_lab.evals.scenario import load_scenarios
 
@@ -232,7 +238,62 @@ def test_agreement_and_kappa():
     assert (item.id, human, note) == ("refund-over-limit#2:explains-escalation", False, "vague")
 
 
-def test_a_label_for_an_unknown_item_is_an_error():
+def test_labels_for_unknown_items_are_listed_not_fatal():
     items = judged_items(results_with({"1": True}))
-    with pytest.raises(ValueError, match="isn't in this results file"):
-        agreement(items, [{"id": "nope#1:x", "human": "pass"}])
+    result = agreement(
+        items,
+        [
+            {"id": "refund-over-limit#1:explains-escalation", "human": "pass"},
+            {"id": "refund-over-limit#1:old-name", "human": "fail"},
+        ],
+    )
+    assert (result.labelled, result.unmatched) == (1, ["refund-over-limit#1:old-name"])
+
+
+# -- re-judging saved conversations ----------------------------------------------------------
+
+
+async def test_rejudge_replaces_verdicts_on_the_same_conversations(tmp_path):
+    scenario, record = await over_limit_run()
+    score = score_run(scenario, record)
+    first, _ = judge_with([2, 2])  # the first judge fails both criteria
+    await judge_scores(SCENARIOS, [score], lambda: first)
+    path = tmp_path / "results.json"
+    write_json(path, summarize([score]), [score], {"model": "scripted"})
+    results = json.loads(path.read_text())
+    labels = [{"id": "refund-over-limit#1:explains-escalation", "human": "pass"}]
+    assert agreement(judged_items(results), labels).agree == 0
+
+    reloaded = load_scores(results, {"refund-over-limit": "u_bob"})
+    second, bodies = judge_with([9, 9])  # e.g. after rewording the criterion
+    await rejudge(reloaded, SCENARIOS, lambda: second)
+    write_json(path, summarize(reloaded), reloaded, results["meta"])
+    rejudged = json.loads(path.read_text())
+
+    # Same conversation, same ids, new verdicts: the old label now agrees.
+    assert "Customer: I'd like a refund of $900" in bodies[0]["messages"][0]["content"]
+    assert agreement(judged_items(rejudged), labels).agree == 1
+    run = rejudged["runs"][0]
+    assert [c["layer"] for c in run["checks"]].count("reply") == 2  # replaced, not appended
+    assert len(run["judge_usage"]) == 2
+    assert run["turns"] == results["runs"][0]["turns"]
+
+
+async def test_rejudge_refuses_results_for_removed_scenarios():
+    scenario, record = await over_limit_run()
+    score = score_run(scenario, record)
+    judge, _ = judge_with([])
+    with pytest.raises(ValueError, match="no longer exist"):
+        await rejudge([score], {}, lambda: judge)
+
+
+def test_items_the_judge_failed_on_are_reported_separately():
+    results = results_with({"1": True})
+    results["runs"][0]["checks"][0]["detail"] = "judge error: AuthenticationError: bad key"
+    items = judged_items(results)
+
+    result = agreement(items, [{"id": "refund-over-limit#1:explains-escalation", "human": "pass"}])
+
+    assert sample(items, 5) == []
+    assert (result.labelled, result.unmatched) == (0, [])
+    assert result.judge_failed == ["refund-over-limit#1:explains-escalation"]

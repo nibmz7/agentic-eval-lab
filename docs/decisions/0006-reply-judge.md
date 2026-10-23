@@ -26,6 +26,10 @@ The deterministic layers (ADR 0005) score what the agent *did*. They can't see w
 
 Labels files are kept in `evals/labels/` and committed: they are the ground truth for the judge.
 
+**Re-judging saved conversations.** After rewording a criterion, `support-eval-calibrate rejudge` runs the judge again on the conversations already in a results file, replacing the old verdicts and keeping the same item ids. A new eval run would produce new conversations that need new labels; re-judging lets one set of labels test several wordings. Items the judge failed to score are reported as judge errors, separately from labels whose criterion was renamed or removed.
+
+**Calibration tunes the judge, not the agent.** It changes the criteria and the judge's setup until the judge agrees with a person. Improving the agent is a separate loop that starts once the judge can be trusted, so the agent is never tuned against a measurement that is itself wrong.
+
 **Cost is reported, not guessed.** The agent's and the judge's tokens are recorded per API call and priced with a table in `pricing.py` (dated, with Haiku 5.5's higher rate for prompts over 100K tokens). The report shows calls, tokens and estimated dollars for each.
 
 ## Known limits

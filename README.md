@@ -112,6 +112,10 @@ To check the judge against your own judgement:
 uv run support-eval-calibrate sample evals/results/<run>.json    # writes evals/labels/labels-<time>.yaml
 # set `human: pass` or `human: fail` on each item, without the judge's verdicts in view
 uv run support-eval-calibrate score evals/results/<run>.json evals/labels/<file>.yaml
+
+# after rewording a criterion in evals/scenarios/, judge the same conversations again
+uv run support-eval-calibrate rejudge evals/results/<run>.json
+uv run support-eval-calibrate score evals/results/<run>.rejudged-<time>.json evals/labels/<file>.yaml
 ```
 
 See [ADR 0006](docs/decisions/0006-reply-judge.md).

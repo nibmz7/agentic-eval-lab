@@ -20,8 +20,9 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from .checks import INFORMATIONAL, LAYERS, RunScore
+from .checks import INFORMATIONAL, LAYERS, Check, RunScore
 from .pricing import PRICES_AS_OF, total_cost
+from .runner import RunRecord, TurnRecord
 
 
 @dataclass
@@ -169,10 +170,10 @@ def render(summary: Summary) -> str:
     )
     if summary.intent_accuracy is not None:
         lines.append(f"intent accuracy (not scored): {summary.intent_accuracy:.0%}")
-    if summary.reply_pass_rate:
+    if summary.reply_pass_rate or summary.judge_errors:
         rates = "   ".join(f"{n} {r:.0%}" for n, r in sorted(summary.reply_pass_rate.items()))
         errors = f"   judge errors: {summary.judge_errors}" if summary.judge_errors else ""
-        lines.append(f"reply, judged (not scored until calibrated): {rates}{errors}")
+        lines.append(f"reply, judged (not scored until calibrated): {rates or '-'}{errors}")
     for role, t in summary.tokens.items():
         dollars = summary.cost.get(role)
         price = f"≈ ${dollars:.4f}" if dollars is not None else "cost unknown for this model"
@@ -215,3 +216,38 @@ def write_json(path: Path, summary: Summary, scores: list[RunScore], meta: dict[
     ]
     body = {"meta": meta, "summary": asdict(summary), "runs": runs}
     path.write_text(json.dumps(body, indent=2, default=str))
+
+
+def load_scores(results: dict[str, Any], customers: dict[str, str]) -> list[RunScore]:
+    """Rebuild scored runs from a results file (the inverse of `write_json`).
+
+    Database snapshots aren't saved, so the rebuilt runs can be judged and
+    summarised again but not re-scored by the deterministic checks.
+    """
+    scores = []
+    for run in results["runs"]:
+        record = RunRecord(
+            scenario_id=run["scenario_id"],
+            run=run["run"],
+            customer=customers.get(run["scenario_id"], ""),
+            before={},
+            turns=[
+                TurnRecord(
+                    say=t["say"],
+                    reply=t["reply"],
+                    intent=t["intent"],
+                    escalated=t["escalated"],
+                    tool_calls=t["tool_calls"],
+                    snapshot={},
+                )
+                for t in run["turns"]
+            ],
+            error=run["error"],
+            seconds=run.get("seconds", 0.0),
+            model=run.get("model"),
+            usage=run.get("usage", []),
+            judge_model=run.get("judge_model"),
+            judge_usage=run.get("judge_usage", []),
+        )
+        scores.append(RunScore(record, [Check(**c) for c in run["checks"]]))
+    return scores

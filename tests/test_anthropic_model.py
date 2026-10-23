@@ -7,7 +7,13 @@ import anthropic
 import httpx2
 import pytest
 
-from support_lab.agent.model import DEFAULT_MODEL, FALLBACK_BETA, AnthropicModel, Intent
+from support_lab.agent.model import (
+    CHEAPEST_MODEL,
+    DEFAULT_MODEL,
+    FALLBACK_BETA,
+    AnthropicModel,
+    Intent,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -16,7 +22,7 @@ TOOL_USE = {"type": "tool_use", "id": "toolu_1", "name": "check_balance",
             "input": {"user_id": "u_alice"}}  # fmt: skip
 
 
-def fake_api(content: list[dict], stop_reason: str):
+def fake_api(content: list[dict], stop_reason: str, model: str = DEFAULT_MODEL):
     requests: list[httpx2.Request] = []
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -40,7 +46,7 @@ def fake_api(content: list[dict], stop_reason: str):
         max_retries=0,
         http_client=anthropic.DefaultAsyncHttpxClient(transport=httpx2.MockTransport(handler)),
     )
-    return AnthropicModel(client), requests
+    return AnthropicModel(client, model=model), requests
 
 
 async def test_respond_request_shape_and_blocks_round_trip_unchanged():
@@ -82,3 +88,14 @@ async def test_classify_uses_structured_output():
 async def test_classify_falls_back_to_general_on_refusal():
     model, _ = fake_api([], "refusal")
     assert await model.classify("...") is Intent.GENERAL
+
+
+async def test_haiku_requests_omit_the_fallback_parameter():
+    model, requests = fake_api([{"type": "text", "text": "hi"}], "end_turn", model=CHEAPEST_MODEL)
+
+    await model.respond(system="sys", messages=[{"role": "user", "content": "hi"}], tools=[])
+
+    body = json.loads(requests[0].content)
+    assert body["model"] == "claude-haiku-5-5"
+    assert "fallbacks" not in body
+    assert FALLBACK_BETA not in requests[0].headers.get("anthropic-beta", "")

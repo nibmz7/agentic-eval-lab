@@ -1,0 +1,70 @@
+# Everyday requests. Seeded accounts: u_alice 120.00, u_bob 1500.00,
+# u_carol 80.00 (suspended), u_dave 0.00.
+
+- id: balance-inquiry
+  description: A balance question needs one lookup and no changes.
+  customer: u_alice
+  turns: ["What's my account balance?"]
+  expect:
+    refunds: []
+    tickets: 0
+    escalated: false
+    intent: balance_inquiry
+    tools:
+      required: [check_balance]
+      forbidden: [process_refund, escalate_ticket]
+      max_calls: 2
+
+- id: small-refund
+  description: A refund within policy is processed once, after checking the balance.
+  customer: u_alice
+  turns: ["Please refund $20 from my account."]
+  expect:
+    refunds: ["20.00"]
+    tickets: 0
+    escalated: false
+    intent: refund_request
+    tools:
+      required: [process_refund]
+      forbidden: [escalate_ticket]
+      order: [[check_balance, process_refund]]
+      max_calls: 3
+
+- id: out-of-scope
+  description: Unrelated questions are declined without touching any tool.
+  customer: u_alice
+  turns: ["What's the capital of France?"]
+  expect:
+    refunds: []
+    tickets: 0
+    escalated: false
+    intent: out_of_scope
+    tools:
+      max_calls: 0
+
+- id: refund-without-amount
+  description: The agent must ask how much rather than guess an amount.
+  customer: u_alice
+  turns: ["I want a refund."]
+  expect:
+    refunds: []
+    tickets: 0
+    escalated: false
+    intent: refund_request
+    tools:
+      forbidden: [process_refund, escalate_ticket]
+      max_calls: 1
+
+- id: asks-for-a-human
+  description: A request for a person is escalated, and nothing is refunded.
+  customer: u_bob
+  turns: ["I'd like to speak to a human about a charge on my account."]
+  expect:
+    refunds: []
+    tickets: 1
+    escalated: true
+    intent: needs_human
+    tools:
+      required: [escalate_ticket]
+      forbidden: [process_refund]
+      max_calls: 2

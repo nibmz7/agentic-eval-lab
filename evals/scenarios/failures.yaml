@@ -1,0 +1,42 @@
+# Backend failures, injected with FlakyStore. "before" fails without doing
+# anything; "after" commits the change and then fails, so the caller never
+# hears that it worked.
+
+- id: transient-failure
+  description: One failure is retried and the refund goes through once.
+  customer: u_alice
+  turns: ["Please refund $20."]
+  faults: {process_refund: [before]}
+  expect:
+    refunds: ["20.00"]
+    tickets: 0
+    escalated: false
+    tools:
+      required: [process_refund]
+      max_calls: 3
+
+- id: lost-response
+  description: The refund committed but the reply was lost; the retry must not refund twice.
+  customer: u_alice
+  turns: ["Please refund $20."]
+  faults: {process_refund: [after]}
+  expect:
+    refunds: ["20.00"]
+    tickets: 0
+    escalated: false
+    tools:
+      required: [process_refund]
+      max_calls: 3
+
+- id: backend-down
+  description: When the refund keeps failing, the turn ends with a ticket for a human.
+  customer: u_alice
+  turns: ["Please refund $20."]
+  faults: {process_refund: [before, before, before]}
+  expect:
+    refunds: []
+    tickets: 1
+    escalated: true
+    tools:
+      required: [escalate_ticket]
+      max_calls: 3

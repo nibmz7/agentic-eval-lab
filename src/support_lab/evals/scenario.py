@@ -18,6 +18,8 @@ Scenarios live in YAML under evals/scenarios/. Each file holds a list:
           forbidden: [process_refund]           # the model must not even ask for it
           order: [[check_balance, process_refund]]   # if both are called, in this order
           max_calls: 3                          # tool calls the model asks for, in total
+        reply:                                  # judged by Claude, see judge.py
+          explains-escalation: The agent tells the customer a human will handle it.
 
 Amounts are written in dollars ("20.00") and compared in cents.
 """
@@ -70,6 +72,7 @@ class Expectations:
     escalation_checked: bool = False
     intent: str | None = None
     tools: ToolExpectations = field(default_factory=ToolExpectations)
+    reply: dict[str, str] = field(default_factory=dict)  # criterion name -> what to check
 
 
 @dataclass(frozen=True)
@@ -128,13 +131,18 @@ def _tools(raw: dict[str, Any], where: str) -> ToolExpectations:
 
 
 def _expectations(raw: dict[str, Any], where: str) -> Expectations:
-    allowed = {"refunds", "tickets", "escalated", "intent", "tools"}
+    allowed = {"refunds", "tickets", "escalated", "intent", "tools", "reply"}
     if unknown_keys := set(raw) - allowed:
         raise ScenarioError(f"{where}: unknown keys {sorted(unknown_keys)}")
     intent = raw.get("intent")
     if intent is not None and intent not in INTENTS:
         raise ScenarioError(f"{where}: unknown intent {intent!r}")
     refunds = raw.get("refunds")
+    reply = raw.get("reply") or {}
+    if not isinstance(reply, dict) or not all(
+        isinstance(k, str) and isinstance(v, str) and v.strip() for k, v in reply.items()
+    ):
+        raise ScenarioError(f"{where}.reply: expected `name: what to check` pairs")
     return Expectations(
         refunds=None if refunds is None else tuple(_cents(a, f"{where}.refunds") for a in refunds),
         tickets=None if "tickets" not in raw else _range(raw["tickets"], f"{where}.tickets"),
@@ -142,6 +150,7 @@ def _expectations(raw: dict[str, Any], where: str) -> Expectations:
         escalation_checked="escalated" in raw and raw["escalated"] is not None,
         intent=intent,
         tools=_tools(raw.get("tools") or {}, f"{where}.tools"),
+        reply=reply,
     )
 
 

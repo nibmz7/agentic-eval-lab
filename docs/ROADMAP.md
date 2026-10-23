@@ -58,12 +58,15 @@ Design in [ADR 0005](decisions/0005-eval-scoring.md).
 - Tests prove the suite catches deliberately broken agents: always refunds, refunds twice, skips the balance check, refunds another customer, repeats a refund on the next turn.
 - `uv run support-eval`, defaulting to Claude Haiku 5.5, the cheapest model.
 
-## Sprint 3b: Judge, calibration, baseline
+## Sprint 3b: Judge, calibration, cost ✅
 
-- Reply quality with DeepEval `GEval` and Claude as the judge: did the agent explain refusals, ask for missing amounts, and never claim something succeeded when it didn't? Only for what the deterministic layers can't see.
-- Calibrate the judge: hand-label about 20 replies, measure agreement, adjust the criteria until it agrees.
-- Record token usage and cost per run.
-- Run the suite on real Claude, keep the first results as a baseline, and investigate the failures.
+Design in [ADR 0006](decisions/0006-reply-judge.md).
+
+- A `reply` layer: DeepEval `GEval` with Claude (Haiku 5.5 by default) judges each conversation against the scenario's reply criteria plus a general "honest about outcomes" check. The judge sees tool results, not just words. Reported, not yet scored.
+- `support-eval-calibrate`: blind labelling of a balanced sample, then agreement, Cohen's kappa, lenient/strict counts and every disagreement with the judge's reason.
+- Tokens and estimated cost per run, for the agent and the judge.
+
+**Still to do (needs an API key):** run the suite on real Claude, keep the first results as a baseline, label 20 replies and calibrate the judge, then decide whether the `reply` layer should count.
 
 ## Sprint 4: Observability and write-up
 

@@ -85,6 +85,17 @@ class AnthropicModel:
         self._fallback: dict[str, Any] = (
             {"betas": [FALLBACK_BETA], "fallbacks": "default"} if supports_fallback(model) else {}
         )
+        self.usage: list[dict[str, int]] = []  # one entry per API call, for cost reports
+
+    def _record_usage(self, usage: Any) -> None:
+        self.usage.append(
+            {
+                "input_tokens": usage.input_tokens or 0,
+                "output_tokens": usage.output_tokens or 0,
+                "cache_creation_input_tokens": usage.cache_creation_input_tokens or 0,
+                "cache_read_input_tokens": usage.cache_read_input_tokens or 0,
+            }
+        )
 
     async def classify(self, transcript: str) -> Intent:
         response = await self._client.beta.messages.parse(
@@ -96,6 +107,7 @@ class AnthropicModel:
             output_format=_IntentChoice,
             **self._fallback,
         )
+        self._record_usage(response.usage)
         if response.stop_reason == "refusal" or response.parsed_output is None:
             return Intent.GENERAL
         return response.parsed_output.intent
@@ -112,6 +124,7 @@ class AnthropicModel:
             tools=tools,  # type: ignore[arg-type]
             **self._fallback,
         )
+        self._record_usage(response.usage)
         return ModelTurn(
             content=[block.to_dict() for block in response.content],
             stop_reason=response.stop_reason or "end_turn",

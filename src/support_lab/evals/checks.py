@@ -8,8 +8,11 @@
     escalation  escalated when it should have, and only then
     per_turn    the same state checks after individual turns (multi-turn drift)
     intent      the planner's label; reported but never fails a run
+    reply       the judge's verdicts on what the agent said (judge.py); reported
+                but never fails a run until the judge is calibrated
 
-A run passes when it completed and every check outside `intent` passed.
+A run passes when it completed and every check outside `intent` and `reply`
+passed.
 All of these are deterministic. DeepEval's metric is given a judge that
 raises if called, so a hidden LLM call fails loudly instead of costing money.
 """
@@ -31,8 +34,17 @@ from deepeval.test_case import LLMTestCase, ToolCall
 from .runner import RunRecord
 from .scenario import Expectations, Scenario
 
-LAYERS = ("crash", "end_state", "trajectory", "efficiency", "escalation", "per_turn", "intent")
-INFORMATIONAL = {"intent"}
+LAYERS = (
+    "crash",
+    "end_state",
+    "trajectory",
+    "efficiency",
+    "escalation",
+    "per_turn",
+    "intent",
+    "reply",
+)
+INFORMATIONAL = {"intent", "reply"}
 MUTATIONS = {"process_refund", "escalate_ticket"}
 
 

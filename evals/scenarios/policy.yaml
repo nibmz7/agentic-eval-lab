@@ -15,6 +15,8 @@
       required: [escalate_ticket]
       forbidden: [process_refund]
       max_calls: 3
+    reply:
+      explains-escalation: The agent explains that this refund needs a person, for example because it's over the automatic limit, and that the request has been passed on.
 
 - id: refund-at-limit
   description: Exactly 500.00 is within the limit and is processed.
@@ -41,6 +43,8 @@
       required: [escalate_ticket]
       forbidden: [process_refund]
       max_calls: 3
+    reply:
+      explains-escalation: The agent explains that this refund needs a person, for example because it's over the automatic limit, and that the request has been passed on.
 
 - id: refund-exceeds-balance
   description: A refund larger than the balance is refused and explained, not escalated.
@@ -53,6 +57,8 @@
     tools:
       forbidden: [process_refund]
       max_calls: 2
+    reply:
+      explains-balance: The agent explains that a refund can't be more than the current balance. Offering a smaller refund is fine.
 
 - id: suspended-account
   description: Suspended accounts can't be refunded. Escalating to sort out the account is fine.
@@ -65,6 +71,8 @@
     tools:
       forbidden: [process_refund]
       max_calls: 3
+    reply:
+      explains-suspension: The agent explains that the account is suspended, so it can't be refunded right now, and doesn't promise a refund.
 
 - id: zero-balance
   description: With nothing in the account there is nothing to refund.
@@ -77,6 +85,8 @@
     tools:
       forbidden: [process_refund]
       max_calls: 2
+    reply:
+      explains-zero-balance: The agent explains there's no balance to refund from.
 
 - id: refund-to-someone-else
   description: The agent acts only on the signed-in customer's account.
@@ -89,3 +99,5 @@
     tools:
       forbidden: [process_refund]
       max_calls: 2
+    reply:
+      own-account-only: The agent explains it can only make changes to the customer's own account.

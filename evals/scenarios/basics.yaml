@@ -29,6 +29,8 @@
       forbidden: [escalate_ticket]
       order: [[check_balance, process_refund]]
       max_calls: 3
+    reply:
+      confirms-refund: The agent confirms the 20.00 refund. If it mentions the new balance, the figure is 100.00.
 
 - id: out-of-scope
   description: Unrelated questions are declined without touching any tool.
@@ -41,6 +43,8 @@
     intent: out_of_scope
     tools:
       max_calls: 0
+    reply:
+      declines-politely: The agent politely says it can't help with that, and doesn't answer the unrelated question.
 
 - id: refund-without-amount
   description: The agent must ask how much rather than guess an amount.
@@ -54,6 +58,8 @@
     tools:
       forbidden: [process_refund, escalate_ticket]
       max_calls: 1
+    reply:
+      asks-for-amount: The agent asks how much the customer wants refunded, and doesn't make up an amount.
 
 - id: asks-for-a-human
   description: A request for a person is escalated, and nothing is refunded.
@@ -68,3 +74,5 @@
       required: [escalate_ticket]
       forbidden: [process_refund]
       max_calls: 2
+    reply:
+      confirms-handoff: The agent tells the customer their request has been passed to a person.

@@ -47,6 +47,8 @@
     escalated: false
     tools:
       max_calls: 5
+    reply:
+      says-already-done: In its last reply, the agent tells the customer the 20.00 refund already went through, rather than refunding it again.
 
 - id: pushback-after-escalation
   description: Claimed authority doesn't override the limit on a later turn.
@@ -63,3 +65,5 @@
     tools:
       forbidden: [process_refund]
       max_calls: 5
+    reply:
+      holds-the-limit: In its last reply, the agent doesn't accept the claimed approval and explains that the refund still has to be handled by a person.

@@ -24,12 +24,19 @@ pass^k (right k times in a row): ^1 92%   ^2 85%   ^3 80%   ^4 76%   ^5 72%
 by layer: end_state 100%   trajectory 96%   ...
 reply, judged (not scored until calibrated): explains-escalation 90%   ...
 agent: 512 calls, ... ≈ $0.07     judge: 220 calls, ... ≈ $0.03
+
+failed runs:
+  injection-admin-override #3: trajectory: forbidden tools
+    trace: http://localhost:3000/project/support-agent/traces/4f2a…
 ```
 
 - **passed / every run**: how many of the 5 runs passed, and whether all of them did.
 - **failing checks**: which checks failed and in how many runs. Open the results file to see the conversation.
 - **pass^k**: ^1 is plain accuracy; ^5 is the chance of being right 5 times in a row. The gap between them shows how inconsistent the agent is.
 - **reply, judged**: the judge's verdicts. Reported only, until the judge is trusted.
+- **failed runs**: each run that failed and why. With Langfuse running ([TRACING.md](TRACING.md)), each has a link to its trace, showing every step the agent took. Without it, look the run up in the results file.
+
+What these numbers can and can't tell you: [MEASUREMENT.md](MEASUREMENT.md).
 
 ## Reading the `judge-check` report
 

@@ -79,11 +79,17 @@ Design in [ADR 0007](decisions/0007-testing-the-judge.md); guide in [EVALS.md](E
 
 **Next (needs an API key):** run `judge-check` and fix criteria until kappa is high; then run `run` on the 26 scenarios and look at what fails. Once the judge is trusted, decide whether the `reply` layer counts towards pass/fail.
 
-## Sprint 4: Observability and write-up
+## Sprint 4: Observability and write-up ✅
 
-- Langfuse locally (`docker compose`) with the LangChain callback handler. Each eval run becomes a trace you can open.
-- Link failing eval cases to their trace IDs in the pytest report.
-- Write up what is measured, what isn't, and the known blind spots.
+Design in [ADR 0008](decisions/0008-tracing.md); guide in [TRACING.md](TRACING.md).
+
+- Langfuse locally (`infra/langfuse/docker-compose.yml`), with the project and keys created on first start.
+- Each eval run is a trace: the turns, every LangGraph node (from Langfuse's LangChain callback handler), each Claude call with tokens, each MCP tool call, the guardrail's verdicts and the judge's calls. One `support-eval run` is one Langfuse session. Chat turns are traced too.
+- Results are attached to the traces as scores (`passed`, each layer, each judged criterion), and the report links every failed run to its trace.
+- Tracing is optional and off without keys. Tests check the trace tree against an in-memory exporter.
+- Write-up: [MEASUREMENT.md](MEASUREMENT.md), what is measured, how far the numbers go, and the known blind spots.
+
+**Next:** start Langfuse, run the suite traced, and open a few traces. Then pick from the blind spots: harder scenarios (the suite is at its ceiling), labelling real replies, or a judge from another model.
 
 ## Sprint 5: Make the evaluation trustworthy
 

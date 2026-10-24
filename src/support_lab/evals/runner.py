@@ -3,6 +3,9 @@
 Every run gets a fresh database and its own in-process MCP server, so runs
 can't affect each other and can run concurrently. The agent sees only the
 customer's messages, never the scenario's expectations.
+
+With tracing on, each run is one Langfuse trace, and every run of one
+`support-eval run` shares a Langfuse session.
 """
 
 from __future__ import annotations
@@ -16,6 +19,7 @@ from typing import Any
 import anyio
 from mcp import Client
 
+from support_lab import tracing
 from support_lab.agent import AgentSettings, McpToolbox, ModelClient, SupportAgent
 from support_lab.backend.faults import FlakyStore
 from support_lab.mcp_server import build_server
@@ -49,6 +53,8 @@ class RunRecord:
     usage: list[dict[str, int]] = field(default_factory=list)  # per API call
     judge_model: str | None = None
     judge_usage: list[dict[str, int]] = field(default_factory=list)
+    trace_id: str | None = None  # the run's Langfuse trace, when tracing is on
+    trace_url: str | None = None
 
     @property
     def after(self) -> dict[str, Any]:
@@ -71,6 +77,36 @@ def describe_error(exc: BaseException) -> str:
 
 
 async def run_once(
+    scenario: Scenario,
+    run: int,
+    model: ModelClient,
+    settings: AgentSettings,
+    *,
+    session: str | None = None,
+) -> RunRecord:
+    with (
+        tracing.attributes(
+            session_id=session,
+            trace_name=f"eval {scenario.id}",
+            tags=["eval", scenario.id],
+            metadata={"scenario": scenario.id, "run": str(run)},
+        ),
+        tracing.observe(
+            f"eval {scenario.id} #{run}",
+            input={"customer": scenario.customer, "says": [t.say for t in scenario.turns]},
+        ) as observation,
+    ):
+        record = await _run_once(scenario, run, model, settings)
+        record.trace_id = tracing.current_trace_id()
+        observation.update(
+            output=record.turns[-1].reply if record.turns else None,
+            level="ERROR" if record.error else None,
+            status_message=record.error,
+        )
+    return record
+
+
+async def _run_once(
     scenario: Scenario, run: int, model: ModelClient, settings: AgentSettings
 ) -> RunRecord:
     store = FlakyStore.seeded()
@@ -112,15 +148,21 @@ async def run_scenarios(
     concurrency: int = 4,
     settings: AgentSettings | None = None,
     on_done: Callable[[RunRecord], None] | None = None,
+    session: str | None = None,
 ) -> list[RunRecord]:
-    """Run every scenario `runs` times. Records come back in scenario order, then run order."""
+    """Run every scenario `runs` times. Records come back in scenario order, then run order.
+
+    `session` groups the runs' traces in Langfuse.
+    """
     settings = settings or AgentSettings()
     limiter = anyio.CapacityLimiter(concurrency)
     results: dict[tuple[str, int], RunRecord] = {}
 
     async def one(scenario: Scenario, run: int) -> None:
         async with limiter:
-            record = await run_once(scenario, run, make_model(scenario, run), settings)
+            record = await run_once(
+                scenario, run, make_model(scenario, run), settings, session=session
+            )
         results[(scenario.id, run)] = record
         if on_done:
             on_done(record)

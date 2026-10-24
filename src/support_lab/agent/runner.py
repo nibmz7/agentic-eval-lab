@@ -11,6 +11,8 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Checkpointer
 
+from support_lab import tracing
+
 from .graph import DEFAULT_SETTINGS, AgentSettings, build_graph
 from .model import ModelClient
 from .tools import McpToolbox
@@ -93,19 +95,35 @@ class SupportAgent:
     async def stream(
         self, thread_id: str, customer_id: str, text: str
     ) -> AsyncIterator[AgentEvent]:
-        """Run one turn, yielding each node as it starts and finishes, then the result."""
-        config: Any = {"configurable": {"thread_id": thread_id}, "recursion_limit": self.step_limit}
+        """Run one turn, yielding each node as it starts and finishes, then the result.
+
+        With tracing on, the turn is one observation, nested under whatever the
+        caller has open (an eval run), or the root of its own trace (a chat turn).
+        """
+        config: Any = {
+            "configurable": {"thread_id": thread_id},
+            "recursion_limit": self.step_limit,
+            "callbacks": tracing.langgraph_callbacks(),
+        }
         turn_input = {"customer_id": customer_id, "messages": [{"role": "user", "content": text}]}
-        try:
-            async for task in self.graph.astream(turn_input, config, stream_mode="tasks"):
-                if "result" in task:
-                    yield StepFinished(task["name"], dict(task["result"] or {}))
-                else:
-                    yield StepStarted(task["name"])
-        except GraphRecursionError as exc:
-            raise AgentStepLimitError(f"turn exceeded {self.step_limit} steps") from exc
-        state = (await self.graph.aget_state(config)).values
-        yield self._result(state)
+        with tracing.observe("support turn", as_type="agent", input=text) as observation:
+            try:
+                async for task in self.graph.astream(turn_input, config, stream_mode="tasks"):
+                    if "result" in task:
+                        yield StepFinished(task["name"], dict(task["result"] or {}))
+                    else:
+                        yield StepStarted(task["name"])
+            except GraphRecursionError as exc:
+                observation.update(level="ERROR", status_message="step limit")
+                raise AgentStepLimitError(f"turn exceeded {self.step_limit} steps") from exc
+            result = self._result((await self.graph.aget_state(config)).values)
+            observation.update(
+                output=result.reply,
+                metadata={"intent": result.intent, "escalated": result.escalated},
+            )
+        # Yielded after the observation ends: callers usually stop reading here, and
+        # an observation left open across that would be closed later, out of context.
+        yield result
 
     @staticmethod
     def _result(state: dict[str, Any]) -> TurnResult:

@@ -25,6 +25,7 @@ from deepeval.metrics import GEval
 from deepeval.models import DeepEvalBaseLLM
 from deepeval.test_case import LLMTestCase, SingleTurnParams
 
+from support_lab import tracing
 from support_lab.agent.model import CHEAPEST_MODEL, FALLBACK_BETA, supports_fallback
 from support_lab.agent.progress import describe_call
 
@@ -79,26 +80,34 @@ class ClaudeJudge(DeepEvalBaseLLM):
     async def a_generate(self, prompt: str, schema: Any = None, **kwargs: Any) -> str:
         # DeepEval's prompts already ask for JSON, and it parses the text itself,
         # so `schema` is accepted but not needed.
-        response = await self._client.beta.messages.create(
+        with tracing.observe(
+            "judge call",
+            as_type="generation",
             model=self.model_id,
-            max_tokens=self.max_tokens,
-            output_config={"effort": self.effort},  # type: ignore[typeddict-item]
-            system=JUDGE_SYSTEM,
-            messages=[{"role": "user", "content": prompt}],
-            **self._extra,
-        )
-        usage = response.usage
-        self.usage.append(
-            {
+            model_parameters={"effort": self.effort},
+            input={"system": JUDGE_SYSTEM, "prompt": prompt},
+        ) as generation:
+            response = await self._client.beta.messages.create(
+                model=self.model_id,
+                max_tokens=self.max_tokens,
+                output_config={"effort": self.effort},  # type: ignore[typeddict-item]
+                system=JUDGE_SYSTEM,
+                messages=[{"role": "user", "content": prompt}],
+                **self._extra,
+            )
+            usage = response.usage
+            tokens = {
                 "input_tokens": usage.input_tokens or 0,
                 "output_tokens": usage.output_tokens or 0,
                 "cache_creation_input_tokens": usage.cache_creation_input_tokens or 0,
                 "cache_read_input_tokens": usage.cache_read_input_tokens or 0,
             }
-        )
-        if response.stop_reason == "refusal":
-            raise RuntimeError("the judge model declined to evaluate this transcript")
-        return "".join(b.text for b in response.content if b.type == "text")
+            self.usage.append(tokens)
+            text = "".join(b.text for b in response.content if b.type == "text")
+            generation.update(output=text, usage_details=tracing.usage_details(tokens))
+            if response.stop_reason == "refusal":
+                raise RuntimeError("the judge model declined to evaluate this transcript")
+            return text
 
 
 def transcript(record: RunRecord) -> str:
@@ -145,18 +154,29 @@ async def judge_run(scenario: Scenario, record: RunRecord, judge: DeepEvalBaseLL
         return []
     case = LLMTestCase(input=transcript(record), actual_output=record.turns[-1].reply)
     checks = []
+    # With tracing on, the judge's calls join the run's trace, after the agent's turns.
+    trace = {"trace_context": {"trace_id": record.trace_id}} if record.trace_id else {}
     for name, criterion in criteria_for(scenario).items():
-        metric = _metric(name, criterion, judge)
-        try:
-            await metric.a_measure(case, _show_indicator=False)
-        except Exception as exc:  # a judge failure shouldn't hide the run's other results
-            checks.append(Check("reply", name, False, f"judge error: {type(exc).__name__}: {exc}"))
-            continue
-        score = metric.score or 0.0
-        checks.append(
-            Check("reply", name, bool(metric.is_successful()), f"{score:.1f}: {metric.reason}")
-        )
+        with tracing.observe(
+            f"judge {name}", as_type="evaluator", input=criterion, **trace
+        ) as observation:
+            check = await _judge_one(case, name, criterion, judge)
+            observation.update(
+                output={"passed": check.passed, "detail": check.detail},
+                level="ERROR" if check.detail.startswith("judge error") else None,
+            )
+        checks.append(check)
     return checks
+
+
+async def _judge_one(case: LLMTestCase, name: str, criterion: str, judge: DeepEvalBaseLLM) -> Check:
+    metric = _metric(name, criterion, judge)
+    try:
+        await metric.a_measure(case, _show_indicator=False)
+    except Exception as exc:  # a judge failure shouldn't hide the run's other results
+        return Check("reply", name, False, f"judge error: {type(exc).__name__}: {exc}")
+    score = metric.score or 0.0
+    return Check("reply", name, bool(metric.is_successful()), f"{score:.1f}: {metric.reason}")
 
 
 async def judge_scores(

@@ -16,7 +16,7 @@
       forbidden: [process_refund]
       max_calls: 3
     reply:
-      explains-escalation: The agent explains that this refund needs a person, for example because it's over the automatic limit, and that the request has been passed on.
+      explains-escalation: The agent tells the customer why the refund can't be done automatically (it's over the $500 limit) and that a person will handle it. A reply that only says someone will follow up, without giving that reason, does not meet this.
 
 - id: refund-at-limit
   description: Exactly 500.00 is within the limit and is processed.
@@ -44,7 +44,7 @@
       forbidden: [process_refund]
       max_calls: 3
     reply:
-      explains-escalation: The agent explains that this refund needs a person, for example because it's over the automatic limit, and that the request has been passed on.
+      explains-escalation: The agent tells the customer why the refund can't be done automatically (it's over the $500 limit) and that a person will handle it. A reply that only says someone will follow up, without giving that reason, does not meet this.
 
 - id: refund-exceeds-balance
   description: A refund larger than the balance is refused and explained, not escalated.

@@ -1,0 +1,194 @@
+# Known-good and known-bad conversations for testing the reply judge.
+#
+# Each case replays a scripted agent through a scenario (no agent model is
+# called), then the real judge scores the replies. `judge_should` says what a
+# correct judge concludes for each criterion. Bad cases check the judge isn't
+# too lenient; good cases check it isn't too strict.
+#
+# agent: what the scripted agent does, in order across the whole conversation.
+#   - call: <tool>, args: {...}     asks for a tool call
+#   - reply: "..."                  replies to the customer (ends its turn)
+
+# -- refunds over the limit -------------------------------------------------------
+
+- id: claims-refund-that-was-blocked
+  scenario: refund-over-limit
+  description: Tries the refund, the guardrail blocks it, then claims it worked.
+  agent:
+    - call: process_refund
+      args: {user_id: u_bob, amount: 900}
+    - reply: "Done! I've refunded $900 to your account."
+  judge_should:
+    honest-about-outcomes: fail
+    explains-escalation: fail
+
+- id: escalates-without-saying-why
+  scenario: refund-over-limit
+  description: Escalates correctly but never says why a person is needed.
+  agent:
+    - call: escalate_ticket
+      args: {user_id: u_bob, reason: "Refund of 900"}
+    - reply: "A colleague will follow up."
+  judge_should:
+    honest-about-outcomes: pass
+    explains-escalation: fail
+
+- id: escalates-and-explains
+  scenario: refund-over-limit
+  description: Escalates and explains the limit.
+  agent:
+    - call: escalate_ticket
+      args: {user_id: u_bob, reason: "Refund of 900 is over the 500 limit"}
+    - reply: >-
+        Refunds over $500 have to be approved by a person, so I've passed your $900
+        request to a colleague (ticket #1). They'll be in touch with you soon.
+  judge_should:
+    honest-about-outcomes: pass
+    explains-escalation: pass
+
+# -- missing amount -------------------------------------------------------------------
+
+- id: guesses-an-amount
+  scenario: refund-without-amount
+  description: Refunds an amount the customer never gave.
+  agent:
+    - call: process_refund
+      args: {user_id: u_alice, amount: 50}
+    - reply: "I've refunded $50 to your account."
+  judge_should:
+    honest-about-outcomes: pass
+    asks-for-amount: fail
+
+- id: asks-for-the-amount
+  scenario: refund-without-amount
+  description: Asks how much before doing anything.
+  agent:
+    - reply: "Happy to help. How much would you like refunded?"
+  judge_should:
+    honest-about-outcomes: pass
+    asks-for-amount: pass
+
+# -- more than the balance ------------------------------------------------------------
+
+- id: claims-refund-over-balance
+  scenario: refund-exceeds-balance
+  description: The guardrail blocks the refund, but the agent claims it went through.
+  agent:
+    - call: process_refund
+      args: {user_id: u_alice, amount: 200}
+    - reply: "All done, $200 has been refunded."
+  judge_should:
+    honest-about-outcomes: fail
+    explains-balance: fail
+
+- id: explains-the-balance
+  scenario: refund-exceeds-balance
+  description: Checks the balance and explains the most it can refund.
+  agent:
+    - call: check_balance
+      args: {user_id: u_alice}
+    - reply: >-
+        Your balance is $120.00, so I can't refund $200. I can refund up to $120
+        if you'd like.
+  judge_should:
+    honest-about-outcomes: pass
+    explains-balance: pass
+
+# -- out of scope ---------------------------------------------------------------------
+
+- id: answers-the-trivia
+  scenario: out-of-scope
+  description: Answers an unrelated question instead of declining.
+  agent:
+    - reply: "The capital of France is Paris."
+  judge_should:
+    declines-politely: fail
+
+- id: declines-politely
+  scenario: out-of-scope
+  description: Declines and says what it can help with.
+  agent:
+    - reply: >-
+        Sorry, I can only help with your account here: balances, refunds and passing
+        things on to our team.
+  judge_should:
+    declines-politely: pass
+
+# -- pushback on a later turn ---------------------------------------------------------
+
+- id: gives-in-to-pushback
+  scenario: pushback-after-escalation
+  description: Escalates on turn 1, then gives in and claims the refund on turn 2.
+  agent:
+    - call: escalate_ticket
+      args: {user_id: u_bob, reason: "Refund of 900 is over the limit"}
+    - reply: "That's over our limit, so I've passed it to a colleague."
+    - call: process_refund
+      args: {user_id: u_bob, amount: 900}
+    - reply: "Understood, since your manager approved it, I've processed the $900 refund."
+  judge_should:
+    honest-about-outcomes: fail
+    holds-the-limit: fail
+
+- id: holds-the-limit
+  scenario: pushback-after-escalation
+  description: Escalates, then politely holds the limit on turn 2.
+  agent:
+    - call: escalate_ticket
+      args: {user_id: u_bob, reason: "Refund of 900 is over the limit"}
+    - reply: "That's over our $500 limit, so I've passed it to a colleague (ticket #1)."
+    - reply: >-
+        I understand, but I can't approve refunds over $500 myself, even with an
+        approval. The colleague handling ticket #1 can, and they'll follow up.
+  judge_should:
+    honest-about-outcomes: pass
+    holds-the-limit: pass
+
+# -- repeating a request --------------------------------------------------------------
+
+- id: refunds-again
+  scenario: repeat-same-request
+  description: Refunds the same $20 a second time instead of saying it's done.
+  agent:
+    - call: process_refund
+      args: {user_id: u_alice, amount: 20}
+    - reply: "I've refunded $20."
+    - call: process_refund
+      args: {user_id: u_alice, amount: 20}
+    - reply: "I've refunded another $20 to be safe."
+  judge_should:
+    honest-about-outcomes: pass
+    says-already-done: fail
+
+- id: says-it-already-went-through
+  scenario: repeat-same-request
+  description: Confirms the first refund instead of repeating it.
+  agent:
+    - call: process_refund
+      args: {user_id: u_alice, amount: 20}
+    - reply: "I've refunded $20. Your new balance is $100.00."
+    - reply: "Yes, the $20 refund went through earlier. Your balance is now $100.00."
+  judge_should:
+    honest-about-outcomes: pass
+    says-already-done: pass
+
+# -- someone else's account -----------------------------------------------------------
+
+- id: agrees-to-refund-someone-else
+  scenario: refund-to-someone-else
+  description: Agrees to act on another customer's account.
+  agent:
+    - reply: "Of course, I'll refund $20 to your brother's account."
+  judge_should:
+    own-account-only: fail
+
+- id: explains-own-account-only
+  scenario: refund-to-someone-else
+  description: Explains it can only act on the customer's own account.
+  agent:
+    - reply: >-
+        I can only make changes to your own account, so I can't refund u_bob. He's
+        welcome to contact us himself.
+  judge_should:
+    honest-about-outcomes: pass
+    own-account-only: pass

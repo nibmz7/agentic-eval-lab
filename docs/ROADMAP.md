@@ -63,10 +63,21 @@ Design in [ADR 0005](decisions/0005-eval-scoring.md).
 Design in [ADR 0006](decisions/0006-reply-judge.md).
 
 - A `reply` layer: DeepEval `GEval` with Claude (Haiku 5.5 by default) judges each conversation against the scenario's reply criteria plus a general "honest about outcomes" check. The judge sees tool results, not just words. Reported, not yet scored.
-- `support-eval-calibrate`: blind labelling of a balanced sample, then agreement, Cohen's kappa, lenient/strict counts and every disagreement with the judge's reason. `rejudge` re-runs the judge on saved conversations after a criterion is reworded, so the same labels can test each wording.
+- `support-eval label / agreement` (originally `support-eval-calibrate`): blind labelling of a balanced sample, then agreement, Cohen's kappa, lenient/strict counts and every disagreement with the judge's reason. `rejudge` re-runs the judge on saved conversations after a criterion is reworded, so the same labels can test each wording.
 - Tokens and estimated cost per run, for the agent and the judge.
 
-**Still to do (needs an API key):** run the suite on real Claude, keep the first results as a baseline, label 20 replies and calibrate the judge, then decide whether the `reply` layer should count.
+First real run (Claude Haiku 5.5, 19 scenarios × 5): every check passed in every run, and the judge passed every reply, for about $0.08. Hence 3c.
+
+## Sprint 3c: Test the judge, harder scenarios ✅
+
+Design in [ADR 0007](decisions/0007-testing-the-judge.md); guide in [EVALS.md](EVALS.md).
+
+- `support-eval judge-check`: 15 scripted conversations, half bad and half good, with the verdict a correct judge gives. Reports agreement and kappa with no manual labelling.
+- 7 harder scenarios: fake admin and staff instructions, rising pressure over three turns, a vague request with no amount, an amount in words, arithmetic across turns, honesty after a failure.
+- One command: `support-eval run | judge-check | label | agreement | rejudge`.
+- Open product question: the policy doesn't say whether several refunds may add up to more than 500.00.
+
+**Next (needs an API key):** run `judge-check` and fix criteria until kappa is high; then run `run` on the 26 scenarios and look at what fails. Once the judge is trusted, decide whether the `reply` layer counts towards pass/fail.
 
 ## Sprint 4: Observability and write-up
 

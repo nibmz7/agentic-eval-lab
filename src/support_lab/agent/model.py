@@ -18,6 +18,8 @@ from typing import Any, Protocol
 import anthropic
 from pydantic import BaseModel
 
+from support_lab import tracing
+
 Block = dict[str, Any]
 Message = dict[str, Any]
 
@@ -87,45 +89,67 @@ class AnthropicModel:
         )
         self.usage: list[dict[str, int]] = []  # one entry per API call, for cost reports
 
-    def _record_usage(self, usage: Any) -> None:
-        self.usage.append(
-            {
-                "input_tokens": usage.input_tokens or 0,
-                "output_tokens": usage.output_tokens or 0,
-                "cache_creation_input_tokens": usage.cache_creation_input_tokens or 0,
-                "cache_read_input_tokens": usage.cache_read_input_tokens or 0,
-            }
-        )
+    def _record_usage(self, usage: Any, generation: Any) -> None:
+        tokens = {
+            "input_tokens": usage.input_tokens or 0,
+            "output_tokens": usage.output_tokens or 0,
+            "cache_creation_input_tokens": usage.cache_creation_input_tokens or 0,
+            "cache_read_input_tokens": usage.cache_read_input_tokens or 0,
+        }
+        self.usage.append(tokens)
+        generation.update(usage_details=tracing.usage_details(tokens))
 
     async def classify(self, transcript: str) -> Intent:
-        response = await self._client.beta.messages.parse(
+        messages = [{"role": "user", "content": transcript}]
+        with tracing.observe(
+            "classify",
+            as_type="generation",
             model=self.model,
-            max_tokens=4096,
-            output_config={"effort": "low"},
-            system=CLASSIFIER_SYSTEM,
-            messages=[{"role": "user", "content": transcript}],
-            output_format=_IntentChoice,
-            **self._fallback,
-        )
-        self._record_usage(response.usage)
-        if response.stop_reason == "refusal" or response.parsed_output is None:
-            return Intent.GENERAL
-        return response.parsed_output.intent
+            model_parameters={"effort": "low"},
+            input={"system": CLASSIFIER_SYSTEM, "messages": messages},
+        ) as generation:
+            response = await self._client.beta.messages.parse(
+                model=self.model,
+                max_tokens=4096,
+                output_config={"effort": "low"},
+                system=CLASSIFIER_SYSTEM,
+                messages=messages,  # type: ignore[arg-type]
+                output_format=_IntentChoice,
+                **self._fallback,
+            )
+            self._record_usage(response.usage, generation)
+            if response.stop_reason == "refusal" or response.parsed_output is None:
+                generation.update(output={"stop_reason": response.stop_reason}, level="WARNING")
+                return Intent.GENERAL
+            generation.update(output=response.parsed_output.intent.value)
+            return response.parsed_output.intent
 
     async def respond(
         self, *, system: str, messages: list[Message], tools: list[Block]
     ) -> ModelTurn:
-        response = await self._client.beta.messages.create(
+        with tracing.observe(
+            "respond",
+            as_type="generation",
             model=self.model,
-            max_tokens=self.max_tokens,
-            output_config={"effort": self.effort},  # type: ignore[typeddict-item]
-            system=system,
-            messages=messages,  # type: ignore[arg-type]
-            tools=tools,  # type: ignore[arg-type]
-            **self._fallback,
-        )
-        self._record_usage(response.usage)
-        return ModelTurn(
-            content=[block.to_dict() for block in response.content],
-            stop_reason=response.stop_reason or "end_turn",
-        )
+            model_parameters={"effort": self.effort, "max_tokens": self.max_tokens},
+            input={"system": system, "messages": messages, "tools": [t["name"] for t in tools]},
+        ) as generation:
+            response = await self._client.beta.messages.create(
+                model=self.model,
+                max_tokens=self.max_tokens,
+                output_config={"effort": self.effort},  # type: ignore[typeddict-item]
+                system=system,
+                messages=messages,  # type: ignore[arg-type]
+                tools=tools,  # type: ignore[arg-type]
+                **self._fallback,
+            )
+            self._record_usage(response.usage, generation)
+            turn = ModelTurn(
+                content=[block.to_dict() for block in response.content],
+                stop_reason=response.stop_reason or "end_turn",
+            )
+            generation.update(
+                output={"content": turn.content, "stop_reason": turn.stop_reason},
+                level="WARNING" if turn.stop_reason == "refusal" else None,
+            )
+            return turn

@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from mcp import Client
 from mcp.types import TextContent, TextResourceContents
 
+from support_lab import tracing
+
 from .model import Block
 
 # Error codes the server uses for deliberate refusals. Retrying these can't help.
@@ -71,6 +73,16 @@ class McpToolbox:
         return json.loads(text)["customer_id"]
 
     async def call(self, name: str, args: dict) -> ToolOutcome:
+        with tracing.observe(name, as_type="tool", input=args) as observation:
+            outcome = await self._call(name, args)
+            observation.update(
+                output=outcome.text,
+                level="ERROR" if outcome.is_error else None,
+                status_message=outcome.code or ("transient" if outcome.transient else None),
+            )
+            return outcome
+
+    async def _call(self, name: str, args: dict) -> ToolOutcome:
         try:
             result = await self._client.call_tool(name, args)
         except Exception as exc:  # anything between us and the server is transient

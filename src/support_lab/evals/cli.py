@@ -12,6 +12,10 @@ Manual calibration on real conversations, when you want it:
 
 RESULTS is a file from evals/results/. `support-eval` with no action means `run`.
 Everything that calls Claude needs ANTHROPIC_API_KEY or `ant auth login`.
+
+With LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY set, every run is traced to
+Langfuse with its results attached as scores, and the report links each
+failed run to its trace. See docs/TRACING.md.
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ import anthropic
 import anyio
 import yaml
 
+from support_lab import tracing
 from support_lab.agent import AnthropicModel
 from support_lab.agent.model import CHEAPEST_MODEL
 
@@ -39,6 +44,7 @@ from .pricing import PRICES_AS_OF, total_cost
 from .report import load_scores, render, summarize, write_json
 from .runner import RunRecord, run_scenarios
 from .scenario import load_scenarios
+from .traces import link_traces, send_scores
 
 DEFAULT_SCENARIOS = Path("evals/scenarios")
 RESULTS_DIR = Path("evals/results")
@@ -68,7 +74,9 @@ def cmd_run(args: argparse.Namespace) -> None:
     out = args.out or RESULTS_DIR / f"{stamp}.json"
     judge = "no judge" if args.no_judge else f"judged by {args.judge_model}"
     print(f"{len(scenarios)} scenarios × {args.runs} runs = {len(scenarios) * args.runs} runs "
-          f"on {args.model} (effort {args.effort}), {judge}\n")  # fmt: skip
+          f"on {args.model} (effort {args.effort}), {judge}")  # fmt: skip
+    session = f"eval-{stamp}" if tracing.enabled() else None
+    print(f"Tracing to Langfuse, session {session}.\n" if session else "")
 
     client = anthropic.AsyncAnthropic()
 
@@ -81,7 +89,12 @@ def cmd_run(args: argparse.Namespace) -> None:
 
     records = anyio.run(
         lambda: run_scenarios(
-            scenarios, make_model, runs=args.runs, concurrency=args.concurrency, on_done=progress
+            scenarios,
+            make_model,
+            runs=args.runs,
+            concurrency=args.concurrency,
+            on_done=progress,
+            session=session,
         )
     )
     by_id = {s.id: s for s in scenarios}
@@ -96,6 +109,9 @@ def cmd_run(args: argparse.Namespace) -> None:
                 concurrency=args.concurrency,
             )
         )
+    if session:
+        send_scores(scores)
+        link_traces(records)
     summary = summarize(scores)
     print("\n" + render(summary))
     meta = {
@@ -104,6 +120,7 @@ def cmd_run(args: argparse.Namespace) -> None:
         "runs": args.runs,
         "judge_model": None if args.no_judge else args.judge_model,
         "started": stamp,
+        "langfuse_session": session,
     }
     write_json(out, summary, scores, meta)
     print(f"\nFull results: {out}")
@@ -266,7 +283,11 @@ def main(argv: list[str] | None = None) -> None:
         argv.insert(0, "run")  # `support-eval` and `support-eval --runs 3` still mean `run`
     args = build_parser().parse_args(argv)
     _quiet_logs()
+    if args.func in (cmd_run, cmd_judge_check, cmd_rejudge) and (problem := tracing.connect()):
+        print(problem)
     try:
         args.func(args)
     except KeyboardInterrupt:
         sys.exit("Stopped.")
+    finally:
+        tracing.flush()

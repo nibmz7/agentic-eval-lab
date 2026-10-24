@@ -42,7 +42,7 @@ Teal steps call Claude; grey steps are plain code. Dashed lines are calls to the
 | 3a | Eval suite: scenarios, deterministic scoring, τ-bench pass^k | ✅ done |
 | 3b | Eval suite: Claude judge for replies, calibration, cost tracking | ✅ done |
 | 3c | Judge check with known answers, harder scenarios, one eval command | ✅ done |
-| 4 | Langfuse tracing + write-up | ⬜ |
+| 4 | Langfuse tracing + write-up: what the evals measure and miss | ✅ done |
 | 5 | Evaluator-integrity tests | ⬜ |
 | 6 | Adversarial, authorization, governance (stretch) | ⬜ |
 | 7 | Compare models across providers on the same suite (stretch) | ⬜ |
@@ -105,6 +105,18 @@ uv run support-eval judge-check    # test the judge on known-good and known-bad 
 ```
 
 That's all you normally need. **[docs/EVALS.md](docs/EVALS.md)** explains what to run when, how to read the reports, what kappa means, and the optional manual calibration. Design notes: [ADR 0005](docs/decisions/0005-eval-scoring.md) (scoring), [0006](docs/decisions/0006-reply-judge.md) (the judge), [0007](docs/decisions/0007-testing-the-judge.md) (testing the judge).
+
+What a passing report does and doesn't tell you: **[docs/MEASUREMENT.md](docs/MEASUREMENT.md)**.
+
+### See inside a run: Langfuse traces
+
+```bash
+docker compose -f infra/langfuse/docker-compose.yml up -d    # http://localhost:3000, lab@example.com / lab-password
+export LANGFUSE_PUBLIC_KEY=pk-lf-lab LANGFUSE_SECRET_KEY=sk-lf-lab LANGFUSE_BASE_URL=http://localhost:3000
+uv run support-eval run --runs 2                             # failed runs now link to their traces
+```
+
+Each eval run becomes a trace with every node, Claude call, tool call and judge verdict, and its results attached as scores. The chat is traced too. Without the keys nothing is traced. Guide: [docs/TRACING.md](docs/TRACING.md).
 
 ## Notes
 

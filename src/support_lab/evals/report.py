@@ -24,6 +24,8 @@ from .checks import INFORMATIONAL, LAYERS, Check, RunScore
 from .pricing import PRICES_AS_OF, total_cost
 from .runner import RunRecord, TurnRecord
 
+MAX_FAILED_RUNS_SHOWN = 20
+
 
 @dataclass
 class ScenarioSummary:
@@ -60,6 +62,7 @@ class Summary:
     judge_errors: int
     tokens: dict[str, dict[str, int]]  # "agent" / "judge" -> input, output
     cost: dict[str, float | None]  # "agent" / "judge" -> estimated USD, None if unknown
+    failed_runs: list[dict[str, Any]]  # scenario_id, run, failing checks, trace link or id
 
 
 def summarize(scores: list[RunScore]) -> Summary:
@@ -99,6 +102,16 @@ def summarize(scores: list[RunScore]) -> Summary:
             else:
                 replies[c.name].append(c.passed)
     tokens, cost = _usage(scores)
+    failed_runs = [
+        {
+            "scenario_id": s.record.scenario_id,
+            "run": s.record.run,
+            "failing": [f"{c.layer}: {c.name}" for c in s.failures],
+            "trace": s.record.trace_url or s.record.trace_id,
+        }
+        for s in scores
+        if not s.passed
+    ]
     intents = [c for s in scores for c in s.checks if c.layer == "intent"]
     escalation = Counter(o for s in scores if (o := s.escalation_outcome))
     return Summary(
@@ -115,6 +128,7 @@ def summarize(scores: list[RunScore]) -> Summary:
         judge_errors=judge_errors,
         tokens=tokens,
         cost=cost,
+        failed_runs=failed_runs,
         crash_reasons=dict(
             Counter(s.record.error.splitlines()[0][:160] for s in scores if s.record.error)
         ),
@@ -183,6 +197,16 @@ def render(summary: Summary) -> str:
         )
     if summary.tokens:
         lines.append(f"(estimates from prices as of {PRICES_AS_OF})")
+    if summary.failed_runs:
+        lines.append("")
+        lines.append("failed runs:")
+        for run in summary.failed_runs[:MAX_FAILED_RUNS_SHOWN]:
+            lines.append(f"  {run['scenario_id']} #{run['run']}: {', '.join(run['failing'])}")
+            if run["trace"]:
+                lines.append(f"    trace: {run['trace']}")
+        hidden = len(summary.failed_runs) - MAX_FAILED_RUNS_SHOWN
+        if hidden > 0:
+            lines.append(f"  … and {hidden} more in the results file")
     return "\n".join(lines)
 
 
@@ -200,6 +224,8 @@ def write_json(path: Path, summary: Summary, scores: list[RunScore], meta: dict[
             "usage": s.record.usage,
             "judge_model": s.record.judge_model,
             "judge_usage": s.record.judge_usage,
+            "trace_id": s.record.trace_id,
+            "trace_url": s.record.trace_url,
             "checks": [asdict(c) for c in s.checks],
             "turns": [
                 {
@@ -248,6 +274,8 @@ def load_scores(results: dict[str, Any], customers: dict[str, str]) -> list[RunS
             usage=run.get("usage", []),
             judge_model=run.get("judge_model"),
             judge_usage=run.get("judge_usage", []),
+            trace_id=run.get("trace_id"),
+            trace_url=run.get("trace_url"),
         )
         scores.append(RunScore(record, [Check(**c) for c in run["checks"]]))
     return scores

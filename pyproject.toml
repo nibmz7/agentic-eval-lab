@@ -7,8 +7,10 @@ requires-python = ">=3.13"
 dependencies = [
     "anthropic>=1.15.0",
     "deepeval>=4.3.1",
+    "langfuse>=5.0.4",
     "langgraph>=1.2.16",
     "mcp>=2.3.0",
+    "opentelemetry-sdk>=1.45.1",
     "pyyaml>=6.0.3",
 ]
 

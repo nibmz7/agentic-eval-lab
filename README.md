@@ -40,7 +40,7 @@ Teal steps call Claude; grey steps are plain code. Dashed lines are calls to the
 | 2 | LangGraph agent with retries, guardrail, escalation | ✅ done |
 | 2.5 | Browser sign-in (OAuth) with a demo bank login server | ✅ done |
 | 3a | Eval suite: scenarios, deterministic scoring, τ-bench pass^k | ✅ done |
-| 3b | Eval suite: Claude judge for replies, calibration, real-model baseline | ⬜ |
+| 3b | Eval suite: Claude judge for replies, calibration, cost tracking | ✅ done (baseline run pending) |
 | 4 | Langfuse tracing + write-up | ⬜ |
 | 5 | Evaluator-integrity tests | ⬜ |
 | 6 | Adversarial, authorization, governance (stretch) | ⬜ |
@@ -104,7 +104,21 @@ uv run support-eval --only refund-over-limit --runs 8
 uv run support-eval --model claude-sonnet-5-5
 ```
 
-Each run gets a fresh database. Runs are scored on the end state of the database, the tools called, efficiency and escalation; crashes count as failures. The report shows pass^1 to pass^n: the chance the agent gets a scenario right k times in a row, estimated from all n runs the way τ-bench does. pass^1 is plain accuracy. Full details go to `evals/results/`. Scenarios are YAML in [`evals/scenarios/`](evals/scenarios/), and the scoring is described in [ADR 0005](docs/decisions/0005-eval-scoring.md). DeepEval's usage telemetry is turned off.
+Each run gets a fresh database. Runs are scored on the end state of the database, the tools called, efficiency and escalation; crashes count as failures. A Claude judge (Haiku 5.5 by default, `--no-judge` to skip) also reads each conversation and checks what the agent said, such as whether it asked for a missing amount or claimed a refund that didn't happen. Its verdicts are reported but don't fail runs until it's calibrated. The report ends with tokens and estimated cost for the agent and the judge. The report shows pass^1 to pass^n: the chance the agent gets a scenario right k times in a row, estimated from all n runs the way τ-bench does. pass^1 is plain accuracy. Full details go to `evals/results/`. Scenarios are YAML in [`evals/scenarios/`](evals/scenarios/), and the scoring is described in [ADR 0005](docs/decisions/0005-eval-scoring.md). DeepEval's usage telemetry is turned off.
+
+To check the judge against your own judgement:
+
+```bash
+uv run support-eval-calibrate sample evals/results/<run>.json    # writes evals/labels/labels-<time>.yaml
+# set `human: pass` or `human: fail` on each item, without the judge's verdicts in view
+uv run support-eval-calibrate score evals/results/<run>.json evals/labels/<file>.yaml
+
+# after rewording a criterion in evals/scenarios/, judge the same conversations again
+uv run support-eval-calibrate rejudge evals/results/<run>.json
+uv run support-eval-calibrate score evals/results/<run>.rejudged-<time>.json evals/labels/<file>.yaml
+```
+
+See [ADR 0006](docs/decisions/0006-reply-judge.md).
 
 ## Notes
 

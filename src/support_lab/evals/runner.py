@@ -45,6 +45,10 @@ class RunRecord:
     turns: list[TurnRecord] = field(default_factory=list)
     error: str | None = None  # set when the run crashed or hit the step limit
     seconds: float = 0.0
+    model: str | None = None  # the agent's model, when it reports one
+    usage: list[dict[str, int]] = field(default_factory=list)  # per API call
+    judge_model: str | None = None
+    judge_usage: list[dict[str, int]] = field(default_factory=list)
 
     @property
     def after(self) -> dict[str, Any]:
@@ -94,6 +98,8 @@ async def run_once(
         record.error = describe_error(exc)
     finally:
         record.seconds = time.monotonic() - started
+        record.model = getattr(model, "model", None)
+        record.usage = list(getattr(model, "usage", []))
         store.close()
     return record
 

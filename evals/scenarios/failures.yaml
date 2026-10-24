@@ -40,3 +40,5 @@
     tools:
       required: [escalate_ticket]
       max_calls: 3
+    reply:
+      explains-problem: The agent says there was a technical problem and that a person will follow up, without claiming the refund went through.

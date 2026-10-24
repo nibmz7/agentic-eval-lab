@@ -3,6 +3,7 @@
     uv run support-eval                       # every scenario, 5 runs each, Claude Haiku 5.5
     uv run support-eval --only refund-over-limit --runs 8
     uv run support-eval --model claude-sonnet-5-5
+    uv run support-eval --no-judge            # skip the Claude judge for replies
 
 Needs Claude credentials (ANTHROPIC_API_KEY, or `ant auth login`). Every run
 calls the model several times, so the run count is printed before starting.
@@ -24,6 +25,7 @@ from support_lab.agent import AnthropicModel
 from support_lab.agent.model import CHEAPEST_MODEL
 
 from .checks import score_run
+from .judge import ClaudeJudge, judge_scores
 from .report import render, summarize, write_json
 from .runner import RunRecord, run_scenarios
 from .scenario import load_scenarios
@@ -44,6 +46,12 @@ def main() -> None:
     parser.add_argument("--model", default=CHEAPEST_MODEL, help=f"default {CHEAPEST_MODEL}")
     parser.add_argument("--effort", default="medium")
     parser.add_argument("--concurrency", type=int, default=4)
+    parser.add_argument(
+        "--judge-model", default=CHEAPEST_MODEL, help=f"judge for replies, default {CHEAPEST_MODEL}"
+    )
+    parser.add_argument(
+        "--no-judge", action="store_true", help="skip judging replies (deterministic layers only)"
+    )
     parser.add_argument("--out", type=Path, help="JSON results file")
     args = parser.parse_args()
     # Each run builds an in-process MCPServer, which turns on INFO logging for the
@@ -59,8 +67,9 @@ def main() -> None:
         scenarios = [s for s in scenarios if s.id in args.only]
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     out = args.out or Path("evals/results") / f"{stamp}.json"
+    judge = "no judge" if args.no_judge else f"judged by {args.judge_model}"
     print(f"{len(scenarios)} scenarios × {args.runs} runs = {len(scenarios) * args.runs} runs "
-          f"on {args.model} (effort {args.effort})\n")  # fmt: skip
+          f"on {args.model} (effort {args.effort}), {judge}\n")  # fmt: skip
 
     client = anthropic.AsyncAnthropic()
 
@@ -85,8 +94,24 @@ def main() -> None:
         sys.exit("Stopped.")
     by_id = {s.id: s for s in scenarios}
     scores = [score_run(by_id[r.scenario_id], r) for r in records]
+    if not args.no_judge:
+        print("\nJudging replies…")
+        anyio.run(
+            lambda: judge_scores(
+                by_id,
+                scores,
+                lambda: ClaudeJudge(args.judge_model, client=client),
+                concurrency=args.concurrency,
+            )
+        )
     summary = summarize(scores)
     print("\n" + render(summary))
-    meta = {"model": args.model, "effort": args.effort, "runs": args.runs, "started": stamp}
+    meta = {
+        "model": args.model,
+        "effort": args.effort,
+        "runs": args.runs,
+        "judge_model": None if args.no_judge else args.judge_model,
+        "started": stamp,
+    }
     write_json(out, summary, scores, meta)
     print(f"\nFull results: {out}")

@@ -1,17 +1,8 @@
-"""Check the judge against your own labels.
+"""Check the judge against your own labels (`support-eval label / agreement / rejudge`).
 
-    uv run support-eval-calibrate sample evals/results/<run>.json   # writes a labels file
-    # open the labels file and set `human: pass` or `human: fail` on each item
-    uv run support-eval-calibrate score evals/results/<run>.json evals/labels/<file>.yaml
-
-    # after rewording criteria in evals/scenarios/, judge the same conversations again
-    uv run support-eval-calibrate rejudge evals/results/<run>.json
-    uv run support-eval-calibrate score evals/results/<run>.rejudged-<time>.json \
-        evals/labels/<file>.yaml
-
-`sample` picks judged replies, half the judge passed and half it failed where
+`label` picks judged replies, half the judge passed and half it failed where
 possible, and writes them *without* the judge's verdicts, so its answer can't
-sway yours. `score` compares your labels with the judge's.
+sway yours. `agreement` compares your labels with the judge's.
 
 Two numbers matter:
 - agreement: the share of items where you and the judge agree.
@@ -28,29 +19,16 @@ made still apply and you can compare wordings without labelling again.
 
 from __future__ import annotations
 
-import argparse
-import json
 import random
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
-import anthropic
-import anyio
 import yaml
 
-from support_lab.agent.model import CHEAPEST_MODEL
-
 from .checks import RunScore
-from .judge import ClaudeJudge, criteria_for, judge_scores, transcript_from_turns
-from .report import load_scores, summarize, write_json
-from .report import render as render_report
-from .scenario import Scenario, load_scenarios
-
-DEFAULT_SCENARIOS = Path("evals/scenarios")
-DEFAULT_LABELS_DIR = Path("evals/labels")
+from .judge import ClaudeJudge, judge_scores, transcript_from_turns
+from .scenario import Scenario
 
 
 @dataclass(frozen=True)
@@ -244,64 +222,3 @@ async def rejudge(
         score.record.judge_model = None
         score.record.judge_usage = []
     await judge_scores(scenarios, scores, make_judge, concurrency=concurrency)
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Check the reply judge against your own labels.")
-    sub = parser.add_subparsers(dest="command", required=True)
-    s = sub.add_parser("sample", help="write a labels file from a results file")
-    s.add_argument("results", type=Path)
-    s.add_argument("--n", type=int, default=20)
-    s.add_argument("--seed", type=int, default=0)
-    s.add_argument("--scenarios", type=Path, default=DEFAULT_SCENARIOS)
-    s.add_argument("--out", type=Path)
-    c = sub.add_parser("score", help="compare your labels with the judge")
-    c.add_argument("results", type=Path)
-    c.add_argument("labels", type=Path)
-    r = sub.add_parser("rejudge", help="judge saved conversations again with the current criteria")
-    r.add_argument("results", type=Path)
-    r.add_argument("--judge-model", default=CHEAPEST_MODEL)
-    r.add_argument("--scenarios", type=Path, default=DEFAULT_SCENARIOS)
-    r.add_argument("--concurrency", type=int, default=4)
-    r.add_argument("--out", type=Path)
-    args = parser.parse_args()
-
-    results = json.loads(args.results.read_text())
-    if args.command == "rejudge":
-        scenarios = {s.id: s for s in load_scenarios(args.scenarios)}
-        scores = load_scores(results, {i: s.customer for i, s in scenarios.items()})
-        client = anthropic.AsyncAnthropic()
-        print(f"Judging {len(scores)} saved runs again with {args.judge_model}…")
-        anyio.run(
-            lambda: rejudge(
-                scores,
-                scenarios,
-                lambda: ClaudeJudge(args.judge_model, client=client),
-                concurrency=args.concurrency,
-            )
-        )
-        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        out = args.out or args.results.with_name(f"{args.results.stem}.rejudged-{stamp}.json")
-        meta = {**results.get("meta", {}), "judge_model": args.judge_model}
-        meta["rejudged_from"] = str(args.results)
-        summary = summarize(scores)
-        write_json(out, summary, scores, meta)
-        print(render_report(summary))
-        print(f"\nWrote {out}. Compare with your labels using `score`.")
-        return
-    items = judged_items(results)
-    if args.command == "sample":
-        if not any(not i.judge_error for i in items):
-            raise SystemExit(
-                "No judged replies in this results file (run with --no-judge, or the judge failed)"
-            )
-        criteria = {s.id: criteria_for(s) for s in load_scenarios(args.scenarios)}
-        chosen = sample(items, args.n, args.seed)
-        stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-        out = args.out or DEFAULT_LABELS_DIR / f"labels-{stamp}.yaml"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(labels_document(chosen, criteria))
-        print(f"Wrote {len(chosen)} items to {out}. Label them, then run `score`.")
-    else:
-        labels = yaml.safe_load(args.labels.read_text()) or []
-        print(render(agreement(items, labels)))

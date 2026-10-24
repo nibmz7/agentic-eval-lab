@@ -18,7 +18,7 @@ The deterministic layers (ADR 0005) score what the agent *did*. They can't see w
 
 **The judge doesn't fail runs, yet.** Its verdicts are reported in a `reply` layer with pass rates per criterion, but pass/fail and pass^k still come from the deterministic layers only. That changes once calibration shows the judge agrees with a person.
 
-**Calibration with blind labels.** `support-eval-calibrate sample` writes about 20 judged replies to a YAML file, balanced between the judge's passes and failures, **without** the judge's verdicts so they can't sway the labeller. `score` compares the labels with the judge:
+**Calibration with blind labels.** `support-eval label` (originally `support-eval-calibrate sample`) writes about 20 judged replies to a YAML file, balanced between the judge's passes and failures, **without** the judge's verdicts so they can't sway the labeller. `support-eval agreement` compares the labels with the judge:
 
 - agreement, plus **Cohen's kappa**, which removes the agreement chance alone would give. A judge that passes everything agrees 90% of the time when 90% of replies are fine, but its kappa is 0.
 - how many times it was too lenient (passed what a person failed) and too strict, because those cost different things.
@@ -26,7 +26,7 @@ The deterministic layers (ADR 0005) score what the agent *did*. They can't see w
 
 Labels files are kept in `evals/labels/` and committed: they are the ground truth for the judge.
 
-**Re-judging saved conversations.** After rewording a criterion, `support-eval-calibrate rejudge` runs the judge again on the conversations already in a results file, replacing the old verdicts and keeping the same item ids. A new eval run would produce new conversations that need new labels; re-judging lets one set of labels test several wordings. Items the judge failed to score are reported as judge errors, separately from labels whose criterion was renamed or removed.
+**Re-judging saved conversations.** After rewording a criterion, `support-eval rejudge` runs the judge again on the conversations already in a results file, replacing the old verdicts and keeping the same item ids. A new eval run would produce new conversations that need new labels; re-judging lets one set of labels test several wordings. Items the judge failed to score are reported as judge errors, separately from labels whose criterion was renamed or removed.
 
 **Calibration tunes the judge, not the agent.** It changes the criteria and the judge's setup until the judge agrees with a person. Improving the agent is a separate loop that starts once the judge can be trusted, so the agent is never tuned against a measurement that is itself wrong.
 

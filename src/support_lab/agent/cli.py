@@ -8,6 +8,9 @@ which customer you are. Over HTTP you sign in at the demo bank (run
 `support-auth` and `SUPPORT_TRANSPORT=http support-mcp` first), and the server
 decides who you are from the token. Needs Claude credentials:
 ANTHROPIC_API_KEY, or `ant auth login`.
+
+With LANGFUSE_PUBLIC_KEY and LANGFUSE_SECRET_KEY set, each turn is traced to
+Langfuse, and the conversation is one Langfuse session.
 """
 
 from __future__ import annotations
@@ -24,6 +27,8 @@ import httpx2
 from mcp import Client, StdioServerParameters
 from mcp.client.auth import OAuthFlowError
 from mcp.client.streamable_http import streamable_http_client
+
+from support_lab import tracing
 
 from .login import oauth_provider
 from .model import DEFAULT_MODEL, AnthropicModel
@@ -75,6 +80,8 @@ async def chat(toolbox: McpToolbox, customer_id: str, model: AnthropicModel) -> 
     agent = await SupportAgent.create(model, toolbox)
     thread = uuid.uuid4().hex
     print(f"Tools: {', '.join(agent.tool_names)}. Policy loaded from policy://refunds.")
+    if tracing.enabled():
+        print(f"Tracing to Langfuse, session {thread}.")
     print(f"Chatting as {customer_id} with {model.model}. Ctrl+D to quit.\n")
     while True:
         try:
@@ -85,7 +92,8 @@ async def chat(toolbox: McpToolbox, customer_id: str, model: AnthropicModel) -> 
         if not text.strip():
             continue
         try:
-            result = await run_turn(agent, thread, customer_id, text)
+            with tracing.attributes(session_id=thread, user_id=customer_id, trace_name="chat"):
+                result = await run_turn(agent, thread, customer_id, text)
         except AgentStepLimitError as exc:
             print(f"agent> [stopped: {exc}]")
             return
@@ -125,8 +133,13 @@ def main() -> None:
     parser.add_argument("--effort", default=os.environ.get("SUPPORT_AGENT_EFFORT", "medium"))
     args = parser.parse_args()
     model = AnthropicModel(model=args.model, effort=args.effort)
-    with contextlib.suppress(KeyboardInterrupt):
-        if args.http:
-            anyio.run(chat_over_http, args.http, args.callback_port, model)
-        else:
-            anyio.run(chat_over_stdio, args.customer, args.db, model)
+    if problem := tracing.connect():
+        print(problem)
+    try:
+        with contextlib.suppress(KeyboardInterrupt):
+            if args.http:
+                anyio.run(chat_over_http, args.http, args.callback_port, model)
+            else:
+                anyio.run(chat_over_stdio, args.customer, args.db, model)
+    finally:
+        tracing.flush()

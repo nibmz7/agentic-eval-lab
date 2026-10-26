@@ -32,6 +32,8 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import Checkpointer
 
+from support_lab import tracing
+
 from .model import Block, Intent, Message, ModelClient
 from .tools import McpToolbox, ToolOutcome
 
@@ -184,7 +186,11 @@ def build_graph(
         log: list[dict[str, Any]] = []
         for call in state.get("pending", []):
             if call["name"] == "process_refund":
-                error = await check_refund(state, call["input"], log)
+                with tracing.observe(
+                    "refund check", as_type="guardrail", input=call["input"]
+                ) as check:
+                    error = await check_refund(state, call["input"], log)
+                    check.update(output=error or "allowed")
                 if error:
                     blocked[call["id"]] = error
         return {"blocked": blocked, "tool_log": log}
